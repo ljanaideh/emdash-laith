@@ -58,3 +58,31 @@ export function requestCached<T>(key: string, fn: () => Promise<T>): Promise<T> 
 	cache.set(key, promise);
 	return promise;
 }
+
+/**
+ * Pre-populate the request-scoped cache with a resolved value.
+ *
+ * Internal helper shared between hydration paths (taxonomy terms,
+ * bylines, etc.) that already have the data in hand and want downstream
+ * callers using `requestCached(key, ...)` to skip the database entirely.
+ * Not exported from the package entrypoint — keep it internal until we
+ * have a documented plugin/extension surface for hydration.
+ *
+ * No-ops outside a request context (local dev without ALS).
+ *
+ * Does not overwrite an existing entry — if a query for this key is already
+ * in flight, its promise wins.
+ */
+export function setRequestCacheEntry<T>(key: string, value: T): void {
+	const ctx = getRequestContext();
+	if (!ctx) return;
+
+	let cache = store.get(ctx);
+	if (!cache) {
+		cache = new Map();
+		store.set(ctx, cache);
+	}
+
+	if (cache.has(key)) return;
+	cache.set(key, Promise.resolve(value));
+}
