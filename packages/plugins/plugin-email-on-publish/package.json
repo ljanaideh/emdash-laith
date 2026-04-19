@@ -4,6 +4,6 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./sandbox": "./src/index.ts"
+    "./sandbox": "./src/sandbox-entry.ts"
   }
 }
