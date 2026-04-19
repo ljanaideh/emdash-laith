@@ -18,6 +18,7 @@
     "@astrojs/react": "catalog:",
     "@emdash-cms/cloudflare": "workspace:*",
     "@emdash-cms/plugin-forms": "workspace:*",
+    "@emdash-cms/plugin-notify-on-publish": "workspace:*",
     "@emdash-cms/plugin-webhook-notifier": "workspace:*",
     "@tanstack/react-query": "catalog:",
     "@tanstack/react-router": "catalog:",
@@ -34,7 +35,5 @@
   },
   "emdash": {
     "seed": "seed/seed.json"
-  },
-  "peerDependencies": {},
-  "optionalDependencies": {}
+  }
 }

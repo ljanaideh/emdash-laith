@@ -1,0 +1,9 @@
+{
+  "name": "@emdash-cms/plugin-email-on-publish",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sandbox": "./src/sandbox-entry.ts"
+  }
+}
