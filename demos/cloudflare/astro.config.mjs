@@ -15,7 +15,7 @@ import { webhookNotifierPlugin } from "@emdash-cms/plugin-webhook-notifier";
 import { defineConfig, fontProviders } from "astro/config";
 import emdash from "emdash/astro";
 
-import { emailOnPublishPlugin } from "./plugins/email-on-publish.ts";
+import { notifyOnPublishPlugin } from "@emdash-cms/plugin-notify-on-publish";
 
 export default defineConfig({
 	output: "server",
@@ -74,7 +74,12 @@ export default defineConfig({
 			plugins: [
 				// Test plugin that exercises all v2 APIs
 				formsPlugin(),
-				emailOnPublishPlugin(),
+				notifyOnPublishPlugin({
+                                  recipients: ["editors@example.com"],
+                                  collections: ["posts"],
+                                  from: "CMS <cms@yourdomain.com>",
+                                  siteUrl: "https://yoursite.com",
+                                }),
 			],
 			// Sandboxed plugins (run in isolated workers)
 			sandboxed: [webhookNotifierPlugin()],
