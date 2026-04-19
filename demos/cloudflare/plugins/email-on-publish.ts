@@ -1,20 +1,38 @@
-// src/sandbox-entry.ts — plugin definition, runs at request time
-// This is the actual plugin logic. Works in both trusted and sandboxed modes.
-// Uses only Web APIs (fetch) — no Node.js built-ins.
+// demos/cloudflare/plugins/email-on-publish.ts
 //
-// Configure via CF Dashboard → Workers & Pages → Settings → Variables & Secrets:
+// Drop this file at: demos/cloudflare/plugins/email-on-publish.ts
 //
+// Then in demos/cloudflare/astro.config.mjs:
+//   import { emailOnPublishPlugin } from "./plugins/email-on-publish.ts";
+//   plugins: [formsPlugin(), emailOnPublishPlugin()],
+//
+// Set these in CF Dashboard → Workers & Pages → Settings → Variables & Secrets:
 //   EMAIL_PROVIDER   mailchannels | resend | sendgrid  (default: mailchannels)
-//   EMAIL_FROM       sender address e.g. cms@yourdomain.com
-//   EMAIL_TO         recipient address e.g. you@yourdomain.com
-//   RESEND_API_KEY   required only when EMAIL_PROVIDER=resend
-//   SENDGRID_API_KEY required only when EMAIL_PROVIDER=sendgrid
+//   EMAIL_FROM       e.g. onboarding@resend.dev
+//   EMAIL_TO         e.g. you@gmail.com
+//   RESEND_API_KEY   only if EMAIL_PROVIDER=resend
+//   SENDGRID_API_KEY only if EMAIL_PROVIDER=sendgrid
 
+import type { PluginDescriptor, PluginContext } from "emdash";
 import { definePlugin } from "emdash";
-import type { PluginContext } from "emdash";
 
 // ---------------------------------------------------------------------------
-// Provider implementations (Web API fetch only — sandbox compatible)
+// Descriptor — runs at build time in Vite, imported by astro.config.mjs
+// ---------------------------------------------------------------------------
+
+export function emailOnPublishPlugin(): PluginDescriptor {
+	return {
+		id: "email-on-publish",
+		version: "1.0.0",
+		format: "standard",
+		// Points to this same file as the runtime entrypoint
+		entrypoint: "./plugins/email-on-publish.ts",
+		options: {},
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Providers — Web API fetch only, no Node.js built-ins
 // ---------------------------------------------------------------------------
 
 async function sendViaMailChannels(
@@ -78,14 +96,13 @@ async function sendViaSendGrid(
 			content: [{ type: "text/html", value: html }],
 		}),
 	});
-	// SendGrid returns 202 Accepted on success
 	if (response.status !== 202) {
 		throw new Error(`SendGrid ${response.status}: ${await response.text()}`);
 	}
 }
 
 // ---------------------------------------------------------------------------
-// Email HTML builder
+// Email HTML
 // ---------------------------------------------------------------------------
 
 function buildHtml(title: string, collection: string, id: string): string {
@@ -113,14 +130,14 @@ function buildHtml(title: string, collection: string, id: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Plugin definition (default export required)
+// Plugin runtime — default export required by EmDash
 // ---------------------------------------------------------------------------
 
 export default definePlugin({
 	hooks: {
 		"content:afterSave": {
 			handler: async (event: any, ctx: PluginContext) => {
-				// Only fire when content transitions to published
+				// Only fire when content is published
 				if (event.content.status !== "published") return;
 
 				const env = (ctx as any).env ?? {};
