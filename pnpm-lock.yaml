@@ -1337,6 +1337,8 @@ importers:
         specifier: 'catalog:'
         version: 5.9.3
 
+  packages/plugins/plugin-email-on-publish: {}
+
   packages/plugins/sandboxed-test:
     dependencies:
       emdash:
