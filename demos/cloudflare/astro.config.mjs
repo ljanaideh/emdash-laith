@@ -82,7 +82,7 @@ export default defineConfig({
                                 }),
 			],
 			// Sandboxed plugins (run in isolated workers)
-			sandboxed: [webhookNotifierPlugin()],
+			sandboxed: [],
 			// Sandbox runner for Cloudflare
 			sandboxRunner: sandbox(),
 			// Plugin marketplace
