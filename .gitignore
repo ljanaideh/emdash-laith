@@ -70,3 +70,4 @@ examples/wp-theme-unit-test/
 
 .perf-query-counts
 query-counts-out/
+**/.dev.vars
