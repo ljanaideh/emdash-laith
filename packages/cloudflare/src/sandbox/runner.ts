@@ -270,6 +270,8 @@ class CloudflareSandboxedPlugin implements SandboxedPlugin {
 				// Forward selected host bindings so sandbox plugins can read Worker secrets (wrangler secret put …)
 				RESEND_API_KEY: (env as Record<string, unknown>).RESEND_API_KEY,
 				EMAIL_FROM: (env as Record<string, unknown>).EMAIL_FROM,
+				POSTMARK_SERVER_TOKEN: (env as Record<string, unknown>).POSTMARK_SERVER_TOKEN,
+				POSTMARK_FROM: (env as Record<string, unknown>).POSTMARK_FROM,
 			},
 		}));
 	}

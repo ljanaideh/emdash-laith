@@ -13,6 +13,7 @@ import { defineConfig, fontProviders } from "astro/config";
 import emdash from "emdash/astro";
 
 import { notifyOnPublishPlugin } from "@emdash-cms/plugin-notify-on-publish";
+import { notifyPostmarkPlugin } from "@emdash-cms/plugin-notify-postmark";
 
 export default defineConfig({
 	output: "server",
@@ -51,6 +52,7 @@ export default defineConfig({
 				// Test plugin that exercises all v2 APIs
 				formsPlugin(),
 				notifyOnPublishPlugin(),
+				notifyPostmarkPlugin(),
 			//	notifyOnPublishPlugin({
                         //        recipients: ["ljanaideh@atypon.com"],
                         //        collections: ["posts"],

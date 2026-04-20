@@ -176,7 +176,9 @@ function createContext(env) {
 		email,
 		env: {
 			RESEND_API_KEY: env.RESEND_API_KEY,
-			EMAIL_FROM: env.EMAIL_FROM
+			EMAIL_FROM: env.EMAIL_FROM,
+			POSTMARK_SERVER_TOKEN: env.POSTMARK_SERVER_TOKEN,
+			POSTMARK_FROM: env.POSTMARK_FROM
 		}
 	};
 }
