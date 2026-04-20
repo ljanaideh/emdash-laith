@@ -1654,9 +1654,9 @@ export class EmDashRuntime {
 			bylines: body.bylines,
 		});
 
-		// Run afterSave hooks (fire-and-forget)
+		// Run afterSave hooks (awaited — required for CF Workers sandbox fetch lifetime)
 		if (result.success && result.data) {
-			this.runAfterSaveHooks(contentItemToRecord(result.data.item), collection, true);
+			await this.runAfterSaveHooks(contentItemToRecord(result.data.item), collection, true);
 		}
 
 		return result;
@@ -1794,9 +1794,9 @@ export class EmDashRuntime {
 			bylines: bodyWithoutRev.bylines,
 		});
 
-		// Run afterSave hooks (fire-and-forget)
+		// Run afterSave hooks (awaited — required for CF Workers sandbox fetch lifetime)
 		if (result.success && result.data) {
-			this.runAfterSaveHooks(contentItemToRecord(result.data.item), collection, false);
+			await this.runAfterSaveHooks(contentItemToRecord(result.data.item), collection, false);
 		}
 
 		return result;
@@ -1881,9 +1881,9 @@ export class EmDashRuntime {
 	async handleContentPublish(collection: string, id: string) {
 		const result = await handleContentPublish(this.db, collection, id);
 
-		// Run afterPublish hooks (fire-and-forget)
+		// Run afterPublish hooks (awaited — required for CF Workers sandbox fetch lifetime)
 		if (result.success && result.data) {
-			this.runAfterPublishHooks(contentItemToRecord(result.data.item), collection);
+			await this.runAfterPublishHooks(contentItemToRecord(result.data.item), collection);
 		}
 
 		return result;
@@ -2215,16 +2215,18 @@ export class EmDashRuntime {
 		return true;
 	}
 
-	private runAfterSaveHooks(
+	private async runAfterSaveHooks(
 		content: Record<string, unknown>,
 		collection: string,
 		isNew: boolean,
-	): void {
+	): Promise<void> {
 		// Trusted plugins
 		if (this.hooks.hasHooks("content:afterSave")) {
-			this.hooks
-				.runContentAfterSave(content, collection, isNew)
-				.catch((err) => console.error("EmDash afterSave hook error:", err));
+			try {
+				await this.hooks.runContentAfterSave(content, collection, isNew);
+			} catch (err) {
+				console.error("EmDash afterSave hook error:", err);
+			}
 		}
 
 		// Sandboxed plugins
@@ -2232,9 +2234,11 @@ export class EmDashRuntime {
 			const [id] = pluginKey.split(":");
 			if (!id || !this.isPluginEnabled(id)) continue;
 
-			plugin
-				.invokeHook("content:afterSave", { content, collection, isNew })
-				.catch((err) => console.error(`EmDash: Sandboxed plugin ${id} afterSave error:`, err));
+			try {
+				await plugin.invokeHook("content:afterSave", { content, collection, isNew });
+			} catch (err) {
+				console.error(`EmDash: Sandboxed plugin ${id} afterSave error:`, err);
+			}
 		}
 	}
 
@@ -2259,12 +2263,17 @@ export class EmDashRuntime {
 		}
 	}
 
-	private runAfterPublishHooks(content: Record<string, unknown>, collection: string): void {
+	private async runAfterPublishHooks(
+		content: Record<string, unknown>,
+		collection: string,
+	): Promise<void> {
 		// Trusted plugins
 		if (this.hooks.hasHooks("content:afterPublish")) {
-			this.hooks
-				.runContentAfterPublish(content, collection)
-				.catch((err) => console.error("EmDash afterPublish hook error:", err));
+			try {
+				await this.hooks.runContentAfterPublish(content, collection);
+			} catch (err) {
+				console.error("EmDash afterPublish hook error:", err);
+			}
 		}
 
 		// Sandboxed plugins
@@ -2272,11 +2281,11 @@ export class EmDashRuntime {
 			const [pluginId] = pluginKey.split(":");
 			if (!pluginId || !this.isPluginEnabled(pluginId)) continue;
 
-			plugin
-				.invokeHook("content:afterPublish", { content, collection })
-				.catch((err) =>
-					console.error(`EmDash: Sandboxed plugin ${pluginId} afterPublish error:`, err),
-				);
+			try {
+				await plugin.invokeHook("content:afterPublish", { content, collection });
+			} catch (err) {
+				console.error(`EmDash: Sandboxed plugin ${pluginId} afterPublish error:`, err);
+			}
 		}
 	}
 
