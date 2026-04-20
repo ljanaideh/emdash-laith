@@ -50,18 +50,18 @@ export default defineConfig({
 			plugins: [
 				// Test plugin that exercises all v2 APIs
 				formsPlugin(),
-	//			notifyOnPublishPlugin({
-        //                        recipients: ["editors@example.com"],
-        //                        collections: ["posts"],
-        //                        from: "CMS <cms@yourdomain.com>",
-        //                        siteUrl: "https://yoursite.com",
-        //                      }),
 				notifyOnPublishPlugin({
-                                  recipients: (process.env.EMAIL_TO || "").split(",").map(s => s.trim()).filter(Boolean),
-                                  collections: ["posts"],
-                                  from: process.env.EMAIL_FROM || "onboarding@resend.dev",
-                                  siteUrl: process.env.SITE_URL || "https://emdash-laith.laithaljanaideh.workers.dev",
-                                }),
+                                recipients: ["ljanaideh@atypon.com"],
+                                collections: ["posts"],
+                                from: "onboarding@resend.dev",
+                                siteUrl: "https://emdash-laith.laithaljanaideh.workers.dev",
+                              }),
+	//			notifyOnPublishPlugin({
+        //                          recipients: (process.env.EMAIL_TO || "").split(",").map(s => s.trim()).filter(Boolean),
+        //                          collections: ["posts"],
+        //                          from: process.env.EMAIL_FROM || "onboarding@resend.dev",
+        //                          siteUrl: process.env.SITE_URL || "https://emdash-laith.laithaljanaideh.workers.dev",
+        //                        }),
 			],
 			// Sandboxed plugins (run in isolated workers)
 			sandboxed: [],
