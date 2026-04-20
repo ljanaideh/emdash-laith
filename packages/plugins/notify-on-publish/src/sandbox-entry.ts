@@ -3,7 +3,6 @@ import type { ContentPublishStateChangeEvent, PluginContext } from "emdash";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const DEFAULT_FROM = "onboarding@resend.dev";
-const TARGET_COLLECTION = "posts";
 
 export default definePlugin({
   hooks: {
@@ -14,7 +13,7 @@ export default definePlugin({
           title?: string;
           slug?: string;
           publishedAt?: string;
-          email?: string;
+          email?: string | string[];
           data?: Record<string, unknown>;
           fields?: { email?: string };
           [key: string]: unknown;
@@ -22,19 +21,20 @@ export default definePlugin({
 
         try {
           ctx.log.info(
-            `[notify-on-publish] fired id=${content.id ?? "(none)"} collection=${event.collection}`,
+            `[notify-on-publish] fired collection=${event.collection} id=${content.id ?? "(no-id)"}`,
           );
 
-          if (event.collection !== TARGET_COLLECTION) return;
-
-          const recipient =
-            (content.email as string | undefined) ??
-            (content.data?.email as string | undefined) ??
+          const rawRecipient =
+            content.email ??
+            content.data?.email ??
             content.fields?.email ??
             findEmailDeep(content);
 
-          if (!recipient) {
-            ctx.log.warn(`[notify-on-publish] skip: no email field on post`);
+          const recipients = normalizeRecipients(rawRecipient);
+          if (recipients.length === 0) {
+            ctx.log.info(
+              `[notify-on-publish] skip: ${event.collection}/${content.id ?? "(no-id)"} has no email field (opt-in)`,
+            );
             return;
           }
 
@@ -50,16 +50,17 @@ export default definePlugin({
             return;
           }
 
-          const title = content.title ?? content.id ?? "(untitled)";
-          const slug = content.slug ?? content.id ?? "";
+          const title = String(content.title ?? content.id ?? "(untitled)");
+          const slug = String(content.slug ?? content.id ?? "");
           const publishedAt =
             typeof content.publishedAt === "string"
               ? content.publishedAt
               : new Date().toISOString();
           const from = resolveEnv(ctx, "EMAIL_FROM") ?? DEFAULT_FROM;
+          const collectionLabel = capitalize(event.collection);
 
           ctx.log.info(
-            `[notify-on-publish] sending: to=${recipient} from=${from} subject="Published: ${title}"`,
+            `[notify-on-publish] sending: collection=${event.collection} to=[${recipients.join(", ")}] from=${from}`,
           );
 
           const text = `"${title}" was just published.
@@ -68,11 +69,11 @@ Collection: ${event.collection}
 Slug: ${slug}
 Published: ${publishedAt}`;
           const html = `<div style="font-family:-apple-system,system-ui,sans-serif;max-width:560px;">
-<h2 style="margin:0 0 16px;">Published: ${escapeHtml(String(title))}</h2>
+<h2 style="margin:0 0 16px;">${escapeHtml(collectionLabel)} published: ${escapeHtml(title)}</h2>
 <p style="font-size:14px;color:#333;line-height:1.6;">
   <strong>Collection:</strong> ${escapeHtml(event.collection)}<br/>
-  <strong>Slug:</strong> <code>${escapeHtml(String(slug))}</code><br/>
-  <strong>Published:</strong> ${escapeHtml(String(publishedAt))}
+  <strong>Slug:</strong> <code>${escapeHtml(slug)}</code><br/>
+  <strong>Published:</strong> ${escapeHtml(publishedAt)}
 </p></div>`;
 
           const t0 = Date.now();
@@ -86,8 +87,8 @@ Published: ${publishedAt}`;
               },
               body: JSON.stringify({
                 from,
-                to: [recipient],
-                subject: `Published: ${title}`,
+                to: recipients,
+                subject: `${collectionLabel} published: ${title}`,
                 text,
                 html,
               }),
@@ -117,7 +118,7 @@ Published: ${publishedAt}`;
             /* ignore */
           }
           ctx.log.info(
-            `[notify-on-publish] SENT to=${recipient} resend_id=${respJson?.id ?? "unknown"}`,
+            `[notify-on-publish] SENT to=[${recipients.join(", ")}] resend_id=${respJson?.id ?? "unknown"}`,
           );
         } catch (topErr) {
           ctx.log.error(
@@ -129,21 +130,58 @@ Published: ${publishedAt}`;
   },
 });
 
-function findEmailDeep(obj: unknown, depth = 0): string | undefined {
+const EMAIL_REGEX = /^[^@\s,]+@[^@\s,]+\.[^@\s,]+$/;
+
+/**
+ * Accepts:
+ *   - undefined / null / empty → []
+ *   - "alice@x.com" → ["alice@x.com"]
+ *   - "alice@x.com, bob@y.com; carol@z.com" → 3 addresses
+ *   - ["alice@x.com", "bob@y.com"] → as-is (validated)
+ * Deduplicates and validates each.
+ */
+function normalizeRecipients(raw: unknown): string[] {
+  if (!raw) return [];
+  const candidates: string[] = [];
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      if (typeof item === "string") candidates.push(...splitList(item));
+    }
+  } else if (typeof raw === "string") {
+    candidates.push(...splitList(raw));
+  }
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const c of candidates) {
+    const trimmed = c.trim();
+    if (!trimmed || !EMAIL_REGEX.test(trimmed)) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(trimmed);
+  }
+  return out;
+}
+
+function splitList(s: string): string[] {
+  return s.split(/[,;\s]+/).filter(Boolean);
+}
+
+function findEmailDeep(obj: unknown, depth = 0): string | string[] | undefined {
   if (!obj || typeof obj !== "object" || depth > 4) return undefined;
   const record = obj as Record<string, unknown>;
   for (const [key, value] of Object.entries(record)) {
-    if (
-      typeof value === "string" &&
-      key.toLowerCase() === "email" &&
-      /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value)
-    ) {
-      return value;
+    const k = key.toLowerCase();
+    if (k === "email" || k === "emails") {
+      if (typeof value === "string" && normalizeRecipients(value).length > 0) {
+        return value;
+      }
+      if (Array.isArray(value) && normalizeRecipients(value).length > 0) {
+        return value as string[];
+      }
     }
   }
   for (const value of Object.values(record)) {
-    if (typeof value === "string" && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value))
-      return value;
     if (value && typeof value === "object") {
       const nested = findEmailDeep(value, depth + 1);
       if (nested) return nested;
@@ -169,4 +207,9 @@ function escapeHtml(s: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function capitalize(s: string): string {
+  if (!s) return s;
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
