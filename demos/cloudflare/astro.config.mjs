@@ -6,8 +6,6 @@ import {
 	r2,
 	sandbox,
 //	cloudflareCache,
-	cloudflareImages,
-	cloudflareStream,
 } from "@emdash-cms/cloudflare";
 import { formsPlugin } from "@emdash-cms/plugin-forms";
 import { webhookNotifierPlugin } from "@emdash-cms/plugin-webhook-notifier";
@@ -48,26 +46,21 @@ export default defineConfig({
 			// Media providers - Cloudflare Images and Stream
 			// Reads from env vars at runtime: CF_ACCOUNT_ID, CF_IMAGES_TOKEN, CF_STREAM_TOKEN
 			// Or customize with accountIdEnvVar/apiTokenEnvVar options
-			mediaProviders: [
-				cloudflareImages({
-					accountIdEnvVar: "CF_MEDIA_ACCOUNT_ID",
-					apiTokenEnvVar: "CF_MEDIA_API_TOKEN",
-					accountHash: "5LGXGUnHU18h6ehN_xjpXQ",
-				}),
-				cloudflareStream({
-					accountIdEnvVar: "CF_MEDIA_ACCOUNT_ID",
-					apiTokenEnvVar: "CF_MEDIA_API_TOKEN",
-				}),
-			],
 			// Trusted plugins (run in host worker)
 			plugins: [
 				// Test plugin that exercises all v2 APIs
-				formsPlugin(),
+	//			formsPlugin(),
+	//			notifyOnPublishPlugin({
+        //                        recipients: ["editors@example.com"],
+        //                        collections: ["posts"],
+        //                        from: "CMS <cms@yourdomain.com>",
+        //                        siteUrl: "https://yoursite.com",
+        //                      }),
 				notifyOnPublishPlugin({
-                                  recipients: ["editors@example.com"],
+                                  recipients: (process.env.EMAIL_TO || "").split(",").map(s => s.trim()).filter(Boolean),
                                   collections: ["posts"],
-                                  from: "CMS <cms@yourdomain.com>",
-                                  siteUrl: "https://yoursite.com",
+                                  from: process.env.EMAIL_FROM || "onboarding@resend.dev",
+                                  siteUrl: process.env.SITE_URL || "https://emdash-laith.laithaljanaideh.workers.dev",
                                 }),
 			],
 			// Sandboxed plugins (run in isolated workers)
