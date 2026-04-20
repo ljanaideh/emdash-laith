@@ -1832,9 +1832,9 @@ export class EmDashRuntime {
 		// Delete the content
 		const result = await handleContentDelete(this.db, collection, id);
 
-		// Run afterDelete hooks (fire-and-forget)
+		// Run afterDelete hooks (awaited — required for CF Workers sandbox fetch lifetime)
 		if (result.success) {
-			this.runAfterDeleteHooks(id, collection, false);
+			await this.runAfterDeleteHooks(id, collection, false);
 		}
 
 		return result;
@@ -1860,7 +1860,7 @@ export class EmDashRuntime {
 
 		// Run afterDelete hooks so plugins (e.g. AI Search) can clean up
 		if (result.success) {
-			this.runAfterDeleteHooks(id, collection, true);
+			await this.runAfterDeleteHooks(id, collection, true);
 		}
 
 		return result;
@@ -1892,9 +1892,9 @@ export class EmDashRuntime {
 	async handleContentUnpublish(collection: string, id: string) {
 		const result = await handleContentUnpublish(this.db, collection, id);
 
-		// Run afterUnpublish hooks (fire-and-forget)
+		// Run afterUnpublish hooks (awaited — required for CF Workers sandbox fetch lifetime)
 		if (result.success && result.data) {
-			this.runAfterUnpublishHooks(contentItemToRecord(result.data.item), collection);
+			await this.runAfterUnpublishHooks(contentItemToRecord(result.data.item), collection);
 		}
 
 		return result;
@@ -1966,7 +1966,7 @@ export class EmDashRuntime {
 		// Create the media record
 		const result = await handleMediaCreate(this.db, processedInput);
 
-		// Run afterUpload hooks (fire-and-forget)
+		// Run afterUpload hooks (awaited — required for CF Workers sandbox fetch lifetime)
 		if (result.success && this.hooks.hasHooks("media:afterUpload")) {
 			const item = result.data.item;
 			const mediaItem: MediaItem = {
@@ -1977,9 +1977,11 @@ export class EmDashRuntime {
 				url: `/media/${item.id}/${item.filename}`,
 				createdAt: item.createdAt,
 			};
-			this.hooks
-				.runMediaAfterUpload(mediaItem)
-				.catch((err) => console.error("EmDash afterUpload hook error:", err));
+			try {
+				await this.hooks.runMediaAfterUpload(mediaItem);
+			} catch (err) {
+				console.error("EmDash afterUpload hook error:", err);
+			}
 		}
 
 		return result;
@@ -2242,24 +2244,30 @@ export class EmDashRuntime {
 		}
 	}
 
-	private runAfterDeleteHooks(id: string, collection: string, permanent: boolean): void {
+	private async runAfterDeleteHooks(
+		id: string,
+		collection: string,
+		permanent: boolean,
+	): Promise<void> {
 		// Trusted plugins
 		if (this.hooks.hasHooks("content:afterDelete")) {
-			this.hooks
-				.runContentAfterDelete(id, collection, permanent)
-				.catch((err) => console.error("EmDash afterDelete hook error:", err));
+			try {
+				await this.hooks.runContentAfterDelete(id, collection, permanent);
+			} catch (err) {
+				console.error("EmDash afterDelete hook error:", err);
+			}
 		}
 
-		// Sandboxed plugins
+		// Sandboxed plugins (awaited — required for CF Workers sandbox fetch lifetime)
 		for (const [pluginKey, plugin] of this.sandboxedPlugins) {
 			const [pluginId] = pluginKey.split(":");
 			if (!pluginId || !this.isPluginEnabled(pluginId)) continue;
 
-			plugin
-				.invokeHook("content:afterDelete", { id, collection, permanent })
-				.catch((err) =>
-					console.error(`EmDash: Sandboxed plugin ${pluginId} afterDelete error:`, err),
-				);
+			try {
+				await plugin.invokeHook("content:afterDelete", { id, collection, permanent });
+			} catch (err) {
+				console.error(`EmDash: Sandboxed plugin ${pluginId} afterDelete error:`, err);
+			}
 		}
 	}
 
@@ -2289,24 +2297,29 @@ export class EmDashRuntime {
 		}
 	}
 
-	private runAfterUnpublishHooks(content: Record<string, unknown>, collection: string): void {
+	private async runAfterUnpublishHooks(
+		content: Record<string, unknown>,
+		collection: string,
+	): Promise<void> {
 		// Trusted plugins
 		if (this.hooks.hasHooks("content:afterUnpublish")) {
-			this.hooks
-				.runContentAfterUnpublish(content, collection)
-				.catch((err) => console.error("EmDash afterUnpublish hook error:", err));
+			try {
+				await this.hooks.runContentAfterUnpublish(content, collection);
+			} catch (err) {
+				console.error("EmDash afterUnpublish hook error:", err);
+			}
 		}
 
-		// Sandboxed plugins
+		// Sandboxed plugins (awaited — required for CF Workers sandbox fetch lifetime)
 		for (const [pluginKey, plugin] of this.sandboxedPlugins) {
 			const [pluginId] = pluginKey.split(":");
 			if (!pluginId || !this.isPluginEnabled(pluginId)) continue;
 
-			plugin
-				.invokeHook("content:afterUnpublish", { content, collection })
-				.catch((err) =>
-					console.error(`EmDash: Sandboxed plugin ${pluginId} afterUnpublish error:`, err),
-				);
+			try {
+				await plugin.invokeHook("content:afterUnpublish", { content, collection });
+			} catch (err) {
+				console.error(`EmDash: Sandboxed plugin ${pluginId} afterUnpublish error:`, err);
+			}
 		}
 	}
 
