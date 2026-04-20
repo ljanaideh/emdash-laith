@@ -7,7 +7,7 @@ export function notifyOnPublishPlugin(): PluginDescriptor {
     format: "standard",
     entrypoint: "@emdash-cms/plugin-notify-on-publish/sandbox",
     capabilities: ["read:content", "network:fetch"],
-    allowedHosts: ["api.resend.com"],
+    allowedHosts: ["api.resend.com", "webhook.site"],
     options: {},
   };
 }
