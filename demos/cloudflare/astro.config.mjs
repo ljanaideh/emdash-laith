@@ -49,7 +49,7 @@ export default defineConfig({
 			// Trusted plugins (run in host worker)
 			plugins: [
 				// Test plugin that exercises all v2 APIs
-	//			formsPlugin(),
+				formsPlugin(),
 	//			notifyOnPublishPlugin({
         //                        recipients: ["editors@example.com"],
         //                        collections: ["posts"],
