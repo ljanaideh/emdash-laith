@@ -3,8 +3,10 @@ import type { PluginContext } from "emdash";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const DEFAULT_FROM = "onboarding@resend.dev";
-const DEFAULT_API_KEY_ENV = "RESEND_API_KEY";
 const TARGET_COLLECTION = "posts";
+
+// TEMPORARY: hardcoded for testing. REVERT before any real deployment.
+const HARDCODED_RESEND_KEY = "re_L9za4ENE_NETaV1wTCVbsu1J7bYCeu9tX";
 
 interface ContentSaveEvent {
   collection: string;
@@ -36,22 +38,10 @@ export default definePlugin({
         const nowPublished = event.content.status === "published";
         const wasPublished = event.previous?.status === "published";
         if (!nowPublished || wasPublished) {
-          ctx.log.info(`[notify-on-publish] skip: not a draft->published transition`);
+          ctx.log.info(`[notify-on-publish] skip: not draft->published transition`);
           return;
         }
 
-        // Deep diagnostic logs so we can see exactly where email lives
-        ctx.log.info(
-          `[notify-on-publish] content keys: ${Object.keys(event.content).join(",")}`,
-        );
-        ctx.log.info(
-          `[notify-on-publish] content.data: ${JSON.stringify(event.content.data ?? {}).slice(0, 800)}`,
-        );
-        ctx.log.info(
-          `[notify-on-publish] content preview: ${JSON.stringify(event.content).slice(0, 1200)}`,
-        );
-
-        // Try every plausible path for the email custom field
         const recipient =
           (event.content.email as string | undefined) ??
           (event.content.data?.email as string | undefined) ??
@@ -62,17 +52,18 @@ export default definePlugin({
           findEmailDeep(event.content);
 
         if (!recipient) {
-          ctx.log.warn(
-            `[notify-on-publish] skip: post ${event.content.id} has no email field set`,
-          );
+          ctx.log.warn(`[notify-on-publish] skip: post ${event.content.id} has no email field set`);
           return;
         }
 
-        const apiKey = resolveEnv(ctx, DEFAULT_API_KEY_ENV);
-        if (!apiKey) {
-          ctx.log.error(`[notify-on-publish] ${DEFAULT_API_KEY_ENV} not set in worker secrets`);
+        const apiKey = resolveEnv(ctx, "RESEND_API_KEY") ?? HARDCODED_RESEND_KEY;
+        if (!apiKey || apiKey === "REPLACE_ME_WITH_YOUR_KEY") {
+          ctx.log.error(`[notify-on-publish] RESEND_API_KEY not available (env missing AND hardcoded key not replaced)`);
           return;
         }
+        ctx.log.info(
+          `[notify-on-publish] api key source: ${resolveEnv(ctx, "RESEND_API_KEY") ? "env" : "hardcoded"}`,
+        );
 
         const kvKey = `sent:${event.collection}:${event.content.id}`;
         if (await ctx.kv.get<boolean>(kvKey)) {
@@ -131,16 +122,13 @@ export default definePlugin({
   },
 });
 
-// Walk the content tree and return the first value that looks like an email
 function findEmailDeep(obj: any, depth = 0): string | undefined {
   if (!obj || typeof obj !== "object" || depth > 4) return undefined;
   for (const [key, value] of Object.entries(obj)) {
     if (typeof value === "string" && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value)) {
-      // Prefer keys actually named "email"
       if (key.toLowerCase() === "email") return value;
     }
   }
-  // Second pass: accept any email-looking string
   for (const value of Object.values(obj)) {
     if (typeof value === "string" && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value)) {
       return value;
