@@ -36,19 +36,30 @@ export default definePlugin({
         const nowPublished = event.content.status === "published";
         const wasPublished = event.previous?.status === "published";
         if (!nowPublished || wasPublished) {
-          ctx.log.info(`[notify-on-publish] skip: not a draft→published transition`);
+          ctx.log.info(`[notify-on-publish] skip: not a draft->published transition`);
           return;
         }
 
-        // Try multiple places where the `email` field might be exposed
-        const recipient =
-          (event.content.email as string | undefined) ??
-          (event.content.data?.email as string | undefined) ??
-          (event.content as any).fields?.email;
-
+        // Deep diagnostic logs so we can see exactly where email lives
         ctx.log.info(
           `[notify-on-publish] content keys: ${Object.keys(event.content).join(",")}`,
         );
+        ctx.log.info(
+          `[notify-on-publish] content.data: ${JSON.stringify(event.content.data ?? {}).slice(0, 800)}`,
+        );
+        ctx.log.info(
+          `[notify-on-publish] content preview: ${JSON.stringify(event.content).slice(0, 1200)}`,
+        );
+
+        // Try every plausible path for the email custom field
+        const recipient =
+          (event.content.email as string | undefined) ??
+          (event.content.data?.email as string | undefined) ??
+          (event.content as any).fields?.email ??
+          (event.content.data as any)?.fields?.email ??
+          (event.content as any).attributes?.email ??
+          (event.content as any).customFields?.email ??
+          findEmailDeep(event.content);
 
         if (!recipient) {
           ctx.log.warn(
@@ -109,7 +120,7 @@ export default definePlugin({
 
           const { id } = (await res.json()) as { id?: string };
           await ctx.kv.set(kvKey, true, { ttl: 60 * 60 * 24 * 30 });
-          ctx.log.info(`[notify-on-publish] ✅ sent to ${recipient} (resend id: ${id ?? "unknown"})`);
+          ctx.log.info(`[notify-on-publish] SENT to ${recipient} (resend id: ${id ?? "unknown"})`);
         } catch (err) {
           ctx.log.error(
             `[notify-on-publish] send failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -119,6 +130,28 @@ export default definePlugin({
     },
   },
 });
+
+// Walk the content tree and return the first value that looks like an email
+function findEmailDeep(obj: any, depth = 0): string | undefined {
+  if (!obj || typeof obj !== "object" || depth > 4) return undefined;
+  for (const [key, value] of Object.entries(obj)) {
+    if (typeof value === "string" && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value)) {
+      // Prefer keys actually named "email"
+      if (key.toLowerCase() === "email") return value;
+    }
+  }
+  // Second pass: accept any email-looking string
+  for (const value of Object.values(obj)) {
+    if (typeof value === "string" && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value)) {
+      return value;
+    }
+    if (value && typeof value === "object") {
+      const nested = findEmailDeep(value, depth + 1);
+      if (nested) return nested;
+    }
+  }
+  return undefined;
+}
 
 function resolveEnv(ctx: PluginContext, name: string): string | undefined {
   const env = (ctx as any).env;
