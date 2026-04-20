@@ -5,7 +5,7 @@ import {
 	d1,
 	r2,
 	sandbox,
-	cloudflareCache,
+//	cloudflareCache,
 	cloudflareImages,
 	cloudflareStream,
 } from "@emdash-cms/cloudflare";
@@ -79,9 +79,9 @@ export default defineConfig({
 		}),
 	],
 	experimental: {
-		cache: {
-			provider: cloudflareCache(),
-		},
+	//	cache: {
+	//		provider: cloudflareCache(),
+	//	},
 		routeRules: {
 			"/": {
 				maxAge: 3_600,
