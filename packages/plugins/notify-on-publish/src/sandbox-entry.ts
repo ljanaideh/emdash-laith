@@ -14,8 +14,8 @@ interface ContentSaveEvent {
     status: string;
     publishedAt?: string;
     email?: string;
-    data?: Record<string, unknown>;
-    [key: string]: unknown;
+    data?: Record<string, any>;
+    [key: string]: any;
   };
   previous?: { status?: string };
 }
@@ -35,7 +35,7 @@ export default definePlugin({
           const recipient =
             (event.content.email as string | undefined) ??
             (event.content.data?.email as string | undefined) ??
-            (event.content as { fields?: { email?: string } }).fields?.email ??
+            (event.content as any).fields?.email ??
             findEmailDeep(event.content);
 
           if (!recipient) {
@@ -45,52 +45,36 @@ export default definePlugin({
 
           const apiKey = resolveEnv(ctx, "RESEND_API_KEY");
           if (!apiKey) {
-            ctx.log.error(
-              `[notify-on-publish] missing RESEND_API_KEY — set Worker secret`,
-            );
+            ctx.log.error(`[notify-on-publish] RESEND_API_KEY not in ctx.env`);
             return;
           }
-          ctx.log.info(
-            `[notify-on-publish] recipient=${recipient} key_source=env length=${apiKey.length}`,
-          );
 
-          const http = (ctx as { http?: { fetch: typeof fetch } }).http;
+          const http = (ctx as any).http;
           if (!http?.fetch) {
             ctx.log.error(`[notify-on-publish] ctx.http.fetch unavailable`);
             return;
           }
 
-          const kvKey = `sent:${event.collection}:${event.content.id}`;
-          let alreadySent = false;
-          try {
-            const v = await ctx.kv.get(kvKey);
-            alreadySent = v === true || v === "true";
-          } catch {
-            /* KV not available — proceed */
-          }
-          if (alreadySent) {
-            ctx.log.info(`[notify-on-publish] already sent (kv=${kvKey}), skipping`);
-            return;
-          }
-
-          const title = String(event.content.title ?? event.content.id);
-          const slug = String(event.content.slug ?? event.content.id);
-          const publishedAt = String(
-            event.content.publishedAt ?? new Date().toISOString(),
-          );
+          const title = event.content.title ?? event.content.id;
+          const slug = event.content.slug ?? event.content.id;
+          const publishedAt = event.content.publishedAt ?? new Date().toISOString();
           const from = resolveEnv(ctx, "EMAIL_FROM") ?? DEFAULT_FROM;
 
           ctx.log.info(
-            `[notify-on-publish] sending via Resend: to=${recipient} from=${from}`,
+            `[notify-on-publish] sending: to=${recipient} from=${from} subject="Published: ${title}"`,
           );
 
-          const text = `"${title}" was just published.\n\nCollection: ${event.collection}\nSlug: ${slug}\nPublished: ${publishedAt}`;
+          const text = `"${title}" was just published or updated.
+
+Collection: ${event.collection}
+Slug: ${slug}
+Last published: ${publishedAt}`;
           const html = `<div style="font-family:-apple-system,system-ui,sans-serif;max-width:560px;">
 <h2 style="margin:0 0 16px;">Published: ${escapeHtml(title)}</h2>
 <p style="font-size:14px;color:#333;line-height:1.6;">
   <strong>Collection:</strong> ${escapeHtml(event.collection)}<br/>
   <strong>Slug:</strong> <code>${escapeHtml(slug)}</code><br/>
-  <strong>Published:</strong> ${escapeHtml(publishedAt)}
+  <strong>Last published:</strong> ${escapeHtml(publishedAt)}
 </p></div>`;
 
           const t0 = Date.now();
@@ -115,37 +99,31 @@ export default definePlugin({
             );
           } catch (fetchErr) {
             ctx.log.error(
-              `[notify-on-publish] fetch threw: ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`,
+              `[notify-on-publish] fetch threw: ${fetchErr instanceof Error ? `${fetchErr.name}: ${fetchErr.message}` : String(fetchErr)}`,
             );
             return;
           }
 
           if (!res.ok) {
-            const errText = await res.text().catch(() => "(unreadable)");
+            const errText = await res.text().catch(() => "(body unreadable)");
             ctx.log.error(
               `[notify-on-publish] Resend ${res.status}: ${errText.slice(0, 500)}`,
             );
             return;
           }
 
-          let respJson: { id?: string } = {};
+          let respJson: any = {};
           try {
-            respJson = (await res.json()) as { id?: string };
+            respJson = await res.json();
           } catch {
             /* ignore */
           }
           ctx.log.info(
             `[notify-on-publish] SENT to=${recipient} resend_id=${respJson?.id ?? "unknown"}`,
           );
-
-          try {
-            await ctx.kv.set(kvKey, true);
-          } catch {
-            /* ignore */
-          }
         } catch (topErr) {
           ctx.log.error(
-            `[notify-on-publish] top error: ${topErr instanceof Error ? topErr.message : String(topErr)}`,
+            `[notify-on-publish] top error: ${topErr instanceof Error ? `${topErr.name}: ${topErr.message}\n${topErr.stack?.slice(0, 400)}` : String(topErr)}`,
           );
         }
       },
@@ -153,10 +131,9 @@ export default definePlugin({
   },
 });
 
-function findEmailDeep(obj: unknown, depth = 0): string | undefined {
+function findEmailDeep(obj: any, depth = 0): string | undefined {
   if (!obj || typeof obj !== "object" || depth > 4) return undefined;
-  const record = obj as Record<string, unknown>;
-  for (const [key, value] of Object.entries(record)) {
+  for (const [key, value] of Object.entries(obj)) {
     if (
       typeof value === "string" &&
       key.toLowerCase() === "email" &&
@@ -165,9 +142,8 @@ function findEmailDeep(obj: unknown, depth = 0): string | undefined {
       return value;
     }
   }
-  for (const value of Object.values(record)) {
-    if (typeof value === "string" && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value))
-      return value;
+  for (const value of Object.values(obj)) {
+    if (typeof value === "string" && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value)) return value;
     if (value && typeof value === "object") {
       const nested = findEmailDeep(value, depth + 1);
       if (nested) return nested;
@@ -177,12 +153,11 @@ function findEmailDeep(obj: unknown, depth = 0): string | undefined {
 }
 
 function resolveEnv(ctx: PluginContext, name: string): string | undefined {
-  const env = (ctx as { env?: Record<string, unknown> }).env;
-  if (env && typeof env[name] === "string") return env[name] as string;
-  const g = globalThis as unknown as Record<string, unknown>;
-  if (typeof g[name] === "string") return g[name] as string;
-  const proc = g.process as { env?: Record<string, string> } | undefined;
-  if (proc?.env?.[name]) return proc.env[name];
+  const env = (ctx as any).env;
+  if (env && typeof env[name] === "string") return env[name];
+  const g = globalThis as any;
+  if (typeof g[name] === "string") return g[name];
+  if (g.process?.env?.[name]) return g.process.env[name];
   return undefined;
 }
 
