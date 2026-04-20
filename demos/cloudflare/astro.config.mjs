@@ -50,12 +50,13 @@ export default defineConfig({
 			plugins: [
 				// Test plugin that exercises all v2 APIs
 				formsPlugin(),
-				notifyOnPublishPlugin({
-                                recipients: ["ljanaideh@atypon.com"],
-                                collections: ["posts"],
-                                from: "onboarding@resend.dev",
-                                siteUrl: "https://emdash-laith.laithaljanaideh.workers.dev",
-                              }),
+				notifyOnPublishPlugin(),
+			//	notifyOnPublishPlugin({
+                        //        recipients: ["ljanaideh@atypon.com"],
+                        //        collections: ["posts"],
+                        //        from: "onboarding@resend.dev",
+                        //        siteUrl: "https://emdash-laith.laithaljanaideh.workers.dev",
+                        //      }),
 	//			notifyOnPublishPlugin({
         //                          recipients: (process.env.EMAIL_TO || "").split(",").map(s => s.trim()).filter(Boolean),
         //                          collections: ["posts"],
