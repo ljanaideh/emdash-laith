@@ -25,12 +25,20 @@ export default definePlugin({
           if (event.collection !== TARGET_COLLECTION) return;
           if (event.content.status !== "published") return;
 
-          ctx.log.info(`[notify-test] passed filters, about to fetch ${WEBHOOK_URL}`);
+          // Check ctx.http is available (capability: network:fetch)
+          if (!(ctx as any).http || typeof (ctx as any).http.fetch !== "function") {
+            ctx.log.error(
+              `[notify-test] ctx.http unavailable. ctx keys: ${Object.keys(ctx).join(",")}`,
+            );
+            return;
+          }
+
+          ctx.log.info(`[notify-test] passed filters, about to ctx.http.fetch ${WEBHOOK_URL}`);
 
           const t0 = Date.now();
           let res: Response;
           try {
-            res = await fetch(WEBHOOK_URL, {
+            res = await (ctx as any).http.fetch(WEBHOOK_URL, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -41,11 +49,11 @@ export default definePlugin({
               }),
             });
             ctx.log.info(
-              `[notify-test] fetch returned status=${res.status} elapsed_ms=${Date.now() - t0}`,
+              `[notify-test] ctx.http.fetch returned status=${res.status} elapsed_ms=${Date.now() - t0}`,
             );
           } catch (fetchErr) {
             ctx.log.error(
-              `[notify-test] fetch threw after ${Date.now() - t0}ms: ${fetchErr instanceof Error ? `${fetchErr.name}: ${fetchErr.message}` : String(fetchErr)}`,
+              `[notify-test] ctx.http.fetch threw after ${Date.now() - t0}ms: ${fetchErr instanceof Error ? `${fetchErr.name}: ${fetchErr.message}` : String(fetchErr)}`,
             );
             return;
           }
