@@ -1,42 +1,37 @@
 import { definePlugin } from "emdash";
-import type { PluginContext } from "emdash";
+import type { ContentPublishStateChangeEvent, PluginContext } from "emdash";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const DEFAULT_FROM = "onboarding@resend.dev";
 const TARGET_COLLECTION = "posts";
 
-interface ContentSaveEvent {
-  collection: string;
-  content: {
-    id: string;
-    title?: string;
-    slug?: string;
-    status: string;
-    publishedAt?: string;
-    email?: string;
-    data?: Record<string, any>;
-    [key: string]: any;
-  };
-  previous?: { status?: string };
-}
-
 export default definePlugin({
   hooks: {
-    "content:afterSave": {
-      handler: async (event: ContentSaveEvent, ctx: PluginContext) => {
+    "content:afterPublish": {
+      handler: async (event: ContentPublishStateChangeEvent, ctx: PluginContext) => {
+        const content = event.content as {
+          id?: string;
+          title?: string;
+          slug?: string;
+          publishedAt?: string;
+          email?: string;
+          data?: Record<string, unknown>;
+          fields?: { email?: string };
+          [key: string]: unknown;
+        };
+
         try {
           ctx.log.info(
-            `[notify-on-publish] fired id=${event.content.id} status=${event.content.status} prev=${event.previous?.status ?? "(none)"}`,
+            `[notify-on-publish] fired id=${content.id ?? "(none)"} collection=${event.collection}`,
           );
 
           if (event.collection !== TARGET_COLLECTION) return;
-          if (event.content.status !== "published") return;
 
           const recipient =
-            (event.content.email as string | undefined) ??
-            (event.content.data?.email as string | undefined) ??
-            (event.content as any).fields?.email ??
-            findEmailDeep(event.content);
+            (content.email as string | undefined) ??
+            (content.data?.email as string | undefined) ??
+            content.fields?.email ??
+            findEmailDeep(content);
 
           if (!recipient) {
             ctx.log.warn(`[notify-on-publish] skip: no email field on post`);
@@ -49,32 +44,35 @@ export default definePlugin({
             return;
           }
 
-          const http = (ctx as any).http;
+          const http = (ctx as { http?: { fetch: typeof fetch } }).http;
           if (!http?.fetch) {
             ctx.log.error(`[notify-on-publish] ctx.http.fetch unavailable`);
             return;
           }
 
-          const title = event.content.title ?? event.content.id;
-          const slug = event.content.slug ?? event.content.id;
-          const publishedAt = event.content.publishedAt ?? new Date().toISOString();
+          const title = content.title ?? content.id ?? "(untitled)";
+          const slug = content.slug ?? content.id ?? "";
+          const publishedAt =
+            typeof content.publishedAt === "string"
+              ? content.publishedAt
+              : new Date().toISOString();
           const from = resolveEnv(ctx, "EMAIL_FROM") ?? DEFAULT_FROM;
 
           ctx.log.info(
             `[notify-on-publish] sending: to=${recipient} from=${from} subject="Published: ${title}"`,
           );
 
-          const text = `"${title}" was just published or updated.
+          const text = `"${title}" was just published.
 
 Collection: ${event.collection}
 Slug: ${slug}
-Last published: ${publishedAt}`;
+Published: ${publishedAt}`;
           const html = `<div style="font-family:-apple-system,system-ui,sans-serif;max-width:560px;">
-<h2 style="margin:0 0 16px;">Published: ${escapeHtml(title)}</h2>
+<h2 style="margin:0 0 16px;">Published: ${escapeHtml(String(title))}</h2>
 <p style="font-size:14px;color:#333;line-height:1.6;">
   <strong>Collection:</strong> ${escapeHtml(event.collection)}<br/>
-  <strong>Slug:</strong> <code>${escapeHtml(slug)}</code><br/>
-  <strong>Last published:</strong> ${escapeHtml(publishedAt)}
+  <strong>Slug:</strong> <code>${escapeHtml(String(slug))}</code><br/>
+  <strong>Published:</strong> ${escapeHtml(String(publishedAt))}
 </p></div>`;
 
           const t0 = Date.now();
@@ -112,9 +110,9 @@ Last published: ${publishedAt}`;
             return;
           }
 
-          let respJson: any = {};
+          let respJson: { id?: string } = {};
           try {
-            respJson = await res.json();
+            respJson = (await res.json()) as { id?: string };
           } catch {
             /* ignore */
           }
@@ -131,9 +129,10 @@ Last published: ${publishedAt}`;
   },
 });
 
-function findEmailDeep(obj: any, depth = 0): string | undefined {
+function findEmailDeep(obj: unknown, depth = 0): string | undefined {
   if (!obj || typeof obj !== "object" || depth > 4) return undefined;
-  for (const [key, value] of Object.entries(obj)) {
+  const record = obj as Record<string, unknown>;
+  for (const [key, value] of Object.entries(record)) {
     if (
       typeof value === "string" &&
       key.toLowerCase() === "email" &&
@@ -142,8 +141,9 @@ function findEmailDeep(obj: any, depth = 0): string | undefined {
       return value;
     }
   }
-  for (const value of Object.values(obj)) {
-    if (typeof value === "string" && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value)) return value;
+  for (const value of Object.values(record)) {
+    if (typeof value === "string" && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value))
+      return value;
     if (value && typeof value === "object") {
       const nested = findEmailDeep(value, depth + 1);
       if (nested) return nested;
@@ -153,11 +153,12 @@ function findEmailDeep(obj: any, depth = 0): string | undefined {
 }
 
 function resolveEnv(ctx: PluginContext, name: string): string | undefined {
-  const env = (ctx as any).env;
-  if (env && typeof env[name] === "string") return env[name];
-  const g = globalThis as any;
-  if (typeof g[name] === "string") return g[name];
-  if (g.process?.env?.[name]) return g.process.env[name];
+  const env = (ctx as { env?: Record<string, unknown> }).env;
+  if (env && typeof env[name] === "string") return env[name] as string;
+  const g = globalThis as unknown as Record<string, unknown>;
+  if (typeof g[name] === "string") return g[name] as string;
+  const proc = g.process as { env?: Record<string, string> } | undefined;
+  if (proc?.env?.[name]) return proc.env[name];
   return undefined;
 }
 
