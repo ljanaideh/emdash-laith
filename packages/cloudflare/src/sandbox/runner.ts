@@ -267,6 +267,9 @@ class CloudflareSandboxedPlugin implements SandboxedPlugin {
 				PLUGIN_VERSION: this.manifest.version || "0.0.0",
 				// Bridge binding for all host operations
 				BRIDGE: bridgeBinding,
+				// Forward selected host bindings so sandbox plugins can read Worker secrets (wrangler secret put …)
+				RESEND_API_KEY: (env as Record<string, unknown>).RESEND_API_KEY,
+				EMAIL_FROM: (env as Record<string, unknown>).EMAIL_FROM,
 			},
 		}));
 	}

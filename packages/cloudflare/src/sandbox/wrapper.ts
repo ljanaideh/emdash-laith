@@ -173,7 +173,11 @@ function createContext(env) {
 		site,
 		url,
 		users,
-		email
+		email,
+		env: {
+			RESEND_API_KEY: env.RESEND_API_KEY,
+			EMAIL_FROM: env.EMAIL_FROM
+		}
 	};
 }
 
