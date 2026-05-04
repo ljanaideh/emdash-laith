@@ -224,6 +224,12 @@ importers:
       emdash:
         specifier: workspace:*
         version: link:../../packages/core
+      kysely:
+        specifier: ^0.27.0
+        version: 0.27.6
+      pg:
+        specifier: ^8.0.0
+        version: 8.18.0
       react:
         specifier: 'catalog:'
         version: 19.2.4
@@ -1937,7 +1943,7 @@ packages:
     engines: {node: 18.20.8 || ^20.3.0 || >=22.0.0}
 
   '@astrojs/telemetry@https://pkg.pr.new/withastro/astro/@astrojs/telemetry@94d342d':
-    resolution: {integrity: sha512-xfarx9l9HW3YpytsM2OpnD3aADtxueYWk6xg81PmVRLxfszskZzoaPVvZwfmqnpIxjBP1tOF1RLVaS10TwnNLQ==, tarball: https://pkg.pr.new/withastro/astro/@astrojs/telemetry@94d342d}
+    resolution: {tarball: https://pkg.pr.new/withastro/astro/@astrojs/telemetry@94d342d}
     version: 3.3.0
     engines: {node: 18.20.8 || ^20.3.0 || >=22.0.0}
 
