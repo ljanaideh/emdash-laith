@@ -9,7 +9,9 @@
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
-      "id": "c0e7da6ff81341669b313664bff6a3d4"
+      "id": "c0e7da6ff81341669b313664bff6a3d4",
+      // Used by miniflare during astro build — not a live connection at build time
+      "localConnectionString": "postgres://emdash_app:emdash_app@database-1.chsx5yoqeoyq.us-east-1.rds.amazonaws.com:5432/emdash_dev"
     }
   ],
 
