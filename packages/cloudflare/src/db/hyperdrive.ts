@@ -47,6 +47,9 @@ export function createDialect(config: HyperdriveConfig): PostgresDialect {
 			// Hyperdrive handles TLS termination; disable pg's SSL layer to avoid
 			// TLS-within-TLS in the Workers runtime.
 			ssl: false,
+			// Without a timeout pg waits forever when Hyperdrive can't reach the
+			// backend, causing the Workers runtime to cancel the hung isolate.
+			connectionTimeoutMillis: 10_000,
 		});
 		pools.set(config.binding, pool);
 	}
