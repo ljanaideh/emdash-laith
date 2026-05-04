@@ -8,7 +8,7 @@
     "build": "astro build",
     "build:all": "pnpm run --filter @emdash-cms/demo-cloudflare... build",
     "preview": "astro preview",
-    "deploy": "pnpm build:all && wrangler deploy",
+    "deploy": "node scripts/bootstrap-postgres.mjs && pnpm build:all && wrangler deploy",
     "db:bootstrap": "node scripts/bootstrap-postgres.mjs",
     "db:create": "wrangler d1 create emdash-demo",
     "db:reset:remote": "./scripts/reset-db.sh",
