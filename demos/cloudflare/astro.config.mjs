@@ -2,7 +2,7 @@
 import cloudflare from "@astrojs/cloudflare";
 import react from "@astrojs/react";
 import {
-	d1,
+	hyperdrive,
 	r2,
 	sandbox,
 //	cloudflareCache,
@@ -36,10 +36,8 @@ export default defineConfig({
 	integrations: [
 		react(),
 		emdash({
-			// D1 database - binding name must match wrangler.jsonc
-			// session: "auto" enables read replicas (nearest replica for anon,
-			// bookmark-based consistency for authenticated users)
-			database: d1({ binding: "DB", session: "auto" }),
+			// Hyperdrive database — binding name must match wrangler.jsonc
+			database: hyperdrive({ binding: "HYPERDRIVE" }),
 			// R2 storage for media
 			storage: r2({ binding: "MEDIA" }),
 			// Cloudflare Access authentication

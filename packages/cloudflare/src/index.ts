@@ -3,6 +3,7 @@
  *
  * Cloudflare adapters for EmDash:
  * - D1 database adapter
+ * - Hyperdrive database adapter (PostgreSQL via Hyperdrive)
  * - R2 storage adapter
  * - Cloudflare Access authentication
  * - Worker Loader sandbox for plugins
@@ -168,6 +169,46 @@ export function d1(config: D1Config): DatabaseDescriptor {
 }
 
 export type { PreviewDOConfig } from "./db/do-types.js";
+
+/**
+ * Hyperdrive configuration
+ */
+export interface HyperdriveConfig {
+	/**
+	 * Name of the Hyperdrive binding in wrangler.jsonc
+	 */
+	binding: string;
+
+	/**
+	 * pg.Pool size. Hyperdrive handles connection pooling externally;
+	 * keep this small (default: 5).
+	 */
+	pool?: { max?: number };
+}
+
+/**
+ * Cloudflare Hyperdrive database adapter
+ *
+ * For Cloudflare Workers connecting to PostgreSQL via Hyperdrive.
+ * Uses a module-scoped pg.Pool backed by env[binding].connectionString.
+ *
+ * Requires a Hyperdrive binding in wrangler.jsonc:
+ * ```jsonc
+ * "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "your-config-id" }]
+ * ```
+ *
+ * @example
+ * ```ts
+ * database: hyperdrive({ binding: "HYPERDRIVE" })
+ * ```
+ */
+export function hyperdrive(config: HyperdriveConfig): DatabaseDescriptor {
+	return {
+		entrypoint: "@emdash-cms/cloudflare/db/hyperdrive",
+		config,
+		type: "postgres",
+	};
+}
 
 /**
  * Durable Object preview database adapter

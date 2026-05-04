@@ -7,7 +7,7 @@ declare namespace Cloudflare {
 	}
 	interface Env {
 		MEDIA: R2Bucket;
-		DB: D1Database;
+		HYPERDRIVE: Hyperdrive;
 		LOADER: WorkerLoader;
 		CF_ACCESS_AUDIENCE: string;
 		CF_MEDIA_API_TOKEN: string;

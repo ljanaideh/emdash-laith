@@ -5,12 +5,11 @@
   "compatibility_date": "2026-01-14",
   "compatibility_flags": ["nodejs_compat", "disable_nodejs_process_v2"],
 
-  // D1 Database binding — points to existing my-emdash-site db
-  "d1_databases": [
+  // Hyperdrive binding — hyperdrive-demo config
+  "hyperdrive": [
     {
-      "binding": "DB",
-      "database_name": "my-emdash-site",
-      "database_id": "ece39c3d-8076-4162-a954-20509aa74d79"
+      "binding": "HYPERDRIVE",
+      "id": "c0e7da6ff81341669b313664bff6a3d4"
     }
   ],
 

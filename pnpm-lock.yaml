@@ -969,6 +969,9 @@ importers:
       kysely-d1:
         specifier: ^0.4.0
         version: 0.4.0(kysely@0.27.6)
+      pg:
+        specifier: ^8.0.0
+        version: 8.18.0
       ulidx:
         specifier: ^2.4.1
         version: 2.4.1
@@ -979,6 +982,9 @@ importers:
       '@cloudflare/workers-types':
         specifier: 'catalog:'
         version: 4.20260305.1
+      '@types/pg':
+        specifier: ^8.16.0
+        version: 8.16.0
       publint:
         specifier: 'catalog:'
         version: 0.3.17
@@ -3099,7 +3105,7 @@ packages:
     resolution: {integrity: sha512-yTCCjuQapvRz6S30B8DyqHu1WYsbYRCww6uNsmbQU4GQVf5gJzJSB60qUHj+qBSxReLtRL/mhmhYhrIc9jVFTw==}
 
   '@lunariajs/core@https://pkg.pr.new/lunariajs/lunaria/@lunariajs/core@83617cc':
-    resolution: {tarball: https://pkg.pr.new/lunariajs/lunaria/@lunariajs/core@83617cc}
+    resolution: {integrity: sha512-k8sHBM7S10HBa39fxsJcOGYMGrbru5UZ9vMS4kmCa9o6dJTUP6rt3zKVEs7uEsHAYasoXyiC6wre2Jiqs3X+zQ==, tarball: https://pkg.pr.new/lunariajs/lunaria/@lunariajs/core@83617cc}
     version: 0.1.1
     engines: {node: '>=18.17.0'}
 
