@@ -44,6 +44,9 @@ export function createDialect(config: HyperdriveConfig): PostgresDialect {
 		pool = new Pool({
 			connectionString: binding.connectionString,
 			max: config.pool?.max ?? 5,
+			// Hyperdrive handles TLS termination; disable pg's SSL layer to avoid
+			// TLS-within-TLS in the Workers runtime.
+			ssl: false,
 		});
 		pools.set(config.binding, pool);
 	}
