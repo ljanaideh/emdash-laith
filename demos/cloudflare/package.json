@@ -15,6 +15,8 @@
     "typecheck": "astro check"
   },
   "dependencies": {
+    "kysely": "^0.27.0",
+    "pg": "^8.0.0",
     "@astrojs/cloudflare": "catalog:",
     "@astrojs/react": "catalog:",
     "@emdash-cms/cloudflare": "workspace:*",
