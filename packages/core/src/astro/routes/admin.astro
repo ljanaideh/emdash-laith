@@ -17,7 +17,9 @@ import { resolveLocale, loadMessages, getLocaleDir } from "@emdash-cms/admin/loc
 
 const resolvedLocale = resolveLocale(Astro.request);
 const resolvedDir = getLocaleDir(resolvedLocale);
+console.log(`[admin] loading messages for locale=${resolvedLocale}`);
 const messages = await loadMessages(resolvedLocale);
+console.log(`[admin] messages loaded, rendering template`);
 ---
 
 <!doctype html>
