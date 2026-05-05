@@ -1,15 +1,26 @@
 /**
  * Cloudflare Hyperdrive runtime adapter - RUNTIME ENTRY
  *
- * Creates a Kysely PostgresDialect backed by a module-scoped pg.Pool that
- * connects through Hyperdrive's connection proxy.
+ * Creates a Kysely PostgresDialect that establishes a fresh pg.Client for
+ * every query. Hyperdrive handles connection pooling to the real database on
+ * the Cloudflare network; the Worker only needs an ephemeral connection to
+ * Hyperdrive's local proxy per query.
+ *
+ * WHY NOT a module-scoped Pool?
+ *   Hyperdrive may provide a different connectionString per Worker request
+ *   (or per isolate startup). A cached Pool bakes in the first request's CS;
+ *   subsequent connect() calls on the stale Pool hang indefinitely in the
+ *   Workers Node.js compat layer when the endpoint has changed or the idle
+ *   connection was closed server-side. Creating a fresh Client per query
+ *   re-reads env.HYPERDRIVE.connectionString every time, which is always
+ *   current regardless of when the isolate started.
  *
  * Do NOT import this at config time — use { hyperdrive } from "@emdash-cms/cloudflare" instead.
  */
 
 import { env } from "cloudflare:workers";
 import { PostgresDialect } from "kysely";
-import { Pool } from "pg";
+import { Client, type Pool } from "pg";
 
 interface HyperdriveConfig {
 	binding: string;
@@ -20,59 +31,56 @@ interface HyperdriveBinding {
 	connectionString: string;
 }
 
-// Module-scope singleton pools keyed by binding name.
-// Stored on globalThis to survive Vite SSR module duplication (see CLAUDE.md).
-const POOL_KEY = Symbol.for("emdash.hyperdrive.pools");
-if (!(globalThis as Record<symbol, unknown>)[POOL_KEY]) {
-	(globalThis as Record<symbol, unknown>)[POOL_KEY] = new Map<string, Pool>();
-}
-const pools = (globalThis as Record<symbol, unknown>)[POOL_KEY] as Map<string, Pool>;
-
-// How long (ms) to wait for a Hyperdrive TCP connect before giving up.
-// pg-pool's built-in connectionTimeoutMillis relies on stream.destroy(), which
-// does not terminate pending connections in the Workers Node.js compat layer —
-// so we enforce the deadline ourselves via Promise.race.
+// How long to wait for a Hyperdrive TCP connect before giving up.
 const CONNECT_TIMEOUT_MS = 8_000;
 
-export function createDialect(config: HyperdriveConfig): PostgresDialect {
-	let pool = pools.get(config.binding);
-	if (!pool) {
-		const binding = (env as Record<string, unknown>)[config.binding] as
-			| HyperdriveBinding
-			| undefined;
-		if (!binding) {
-			throw new Error(
-				`Hyperdrive binding "${config.binding}" not found in environment. ` +
-					`Add it to your wrangler.jsonc:\n\n` +
-					`  "hyperdrive": [{ "binding": "${config.binding}", "id": "your-hyperdrive-config-id" }]`,
-			);
-		}
-		const cs = binding.connectionString;
-		console.log(`[hyperdrive] init binding=${config.binding} cs_prefix=${cs.slice(0, 30)}...`);
-		pool = new Pool({
-			connectionString: cs,
-			max: config.pool?.max ?? 5,
-			// Hyperdrive handles TLS termination; disable pg's SSL layer to avoid
-			// TLS-within-TLS in the Workers runtime.
-			ssl: false,
-			// Disable idle timeout: pg-pool's idle cleanup calls client.end() outside
-			// a request context, and reconnecting to Hyperdrive hangs in the Workers
-			// Node.js compat layer. Keep the connection alive for the isolate's
-			// lifetime instead (TCP connections persist within an isolate).
-			idleTimeoutMillis: 0,
-			allowExitOnIdle: false,
-		});
+function getBinding(bindingName: string): HyperdriveBinding {
+	const binding = (env as Record<string, unknown>)[bindingName] as HyperdriveBinding | undefined;
+	if (!binding) {
+		throw new Error(
+			`Hyperdrive binding "${bindingName}" not found in environment. ` +
+				`Add it to your wrangler.jsonc:\n\n` +
+				`  "hyperdrive": [{ "binding": "${bindingName}", "id": "your-hyperdrive-config-id" }]`,
+		);
+	}
+	return binding;
+}
 
-		// pg-pool's connectionTimeoutMillis fires a timer then calls
-		// stream.destroy() to abort the in-flight TCP connect. stream.destroy()
-		// is a no-op in the Workers Node.js compat layer, so the connect callback
-		// is never called and the Worker hangs. We override pool.connect() with a
-		// Promise.race to enforce the deadline reliably.
-		const _origConnect = pool.connect.bind(pool);
-		// eslint-disable-next-line typescript-eslint(no-explicit-any) -- duck-type override on pg Pool
-		(pool as any).connect = () =>
-			Promise.race([
-				_origConnect(),
+export function createDialect(config: HyperdriveConfig): PostgresDialect {
+	// Validate the binding exists at dialect creation time.
+	const initial = getBinding(config.binding);
+	console.log(
+		`[hyperdrive] createDialect binding=${config.binding} cs_prefix=${initial.connectionString.slice(0, 30)}...`,
+	);
+
+	// Fake pool: Kysely only needs connect() + end().
+	// We re-read env.HYPERDRIVE.connectionString on every connect() so we
+	// always use the current CS, even if it changes between requests.
+	const fakePool = {
+		connect: async (): Promise<Client & { release: (destroy?: boolean) => Promise<void> }> => {
+			const binding = getBinding(config.binding);
+			const cs = binding.connectionString;
+			console.log(`[hyperdrive] connect() cs_prefix=${cs.slice(0, 30)}...`);
+
+			const connectPromise = (async () => {
+				const client = new Client({
+					connectionString: cs,
+					// Hyperdrive handles TLS to the database; the Worker connects
+					// to Hyperdrive's local proxy without TLS.
+					ssl: false,
+				});
+				await client.connect();
+				// Kysely calls release() when it's done with the connection.
+				// We close the Client rather than returning it to a pool.
+				(client as Client & { release: (destroy?: boolean) => Promise<void> }).release =
+					async (_destroy?: boolean) => {
+						await client.end().catch(() => {});
+					};
+				return client as Client & { release: (destroy?: boolean) => Promise<void> };
+			})();
+
+			return Promise.race([
+				connectPromise,
 				new Promise<never>((_, reject) =>
 					setTimeout(
 						() =>
@@ -86,8 +94,12 @@ export function createDialect(config: HyperdriveConfig): PostgresDialect {
 					),
 				),
 			]);
+		},
+		// Called by Kysely.destroy() — nothing to clean up.
+		end: async (): Promise<void> => {},
+	};
 
-		pools.set(config.binding, pool);
-	}
-	return new PostgresDialect({ pool });
+	// Cast: Kysely only uses connect() + end() at runtime; the full Pool type
+	// is not required.
+	return new PostgresDialect({ pool: fakePool as unknown as Pool });
 }
