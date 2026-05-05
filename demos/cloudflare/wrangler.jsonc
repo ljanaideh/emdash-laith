@@ -5,11 +5,11 @@
   "compatibility_date": "2026-01-14",
   "compatibility_flags": ["nodejs_compat", "disable_nodejs_process_v2"],
 
-  // Hyperdrive binding — hyperdrive-demo config
+  // Hyperdrive binding — emdash-pg config pointing to emdash-demo RDS
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
-      "id": "c0e7da6ff81341669b313664bff6a3d4"
+      "id": "2b7fc91df2d24a7cb7e434120d82060f"
     }
   ],
 
@@ -24,6 +24,14 @@
   "observability": {
     "enabled": true
   },
+
+  // KV namespace for Astro session storage
+  "kv_namespaces": [
+    {
+      "binding": "SESSION",
+      "id": "0516c5af42c24460b6a9eba751ffc0e3"
+    }
+  ],
 
   // Worker Loader for plugin sandboxing
   "worker_loaders": [
