@@ -55,6 +55,12 @@ export function createDialect(config: HyperdriveConfig): PostgresDialect {
 			// Hyperdrive handles TLS termination; disable pg's SSL layer to avoid
 			// TLS-within-TLS in the Workers runtime.
 			ssl: false,
+			// Disable idle timeout: pg-pool's idle cleanup calls client.end() outside
+			// a request context, and reconnecting to Hyperdrive hangs in the Workers
+			// Node.js compat layer. Keep the connection alive for the isolate's
+			// lifetime instead (TCP connections persist within an isolate).
+			idleTimeoutMillis: 0,
+			allowExitOnIdle: false,
 		});
 
 		// pg-pool's connectionTimeoutMillis fires a timer then calls
