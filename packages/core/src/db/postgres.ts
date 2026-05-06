@@ -24,6 +24,8 @@ export function createDialect(config: PostgresConfig): PostgresDialect {
 		ssl: config.ssl,
 		min: config.pool?.min ?? 0,
 		max: config.pool?.max ?? 10,
+		idleTimeoutMillis: config.pool?.idleTimeoutMillis ?? 10_000,
+		connectionTimeoutMillis: config.pool?.connectionTimeoutMillis ?? 5_000,
 	});
 
 	return new PostgresDialect({ pool });
