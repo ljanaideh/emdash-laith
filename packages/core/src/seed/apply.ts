@@ -19,7 +19,7 @@ import { withTransaction } from "../database/transaction.js";
 import type { Database } from "../database/types.js";
 import type { MediaValue } from "../fields/types.js";
 import { ssrfSafeFetch, validateExternalUrl } from "../import/ssrf.js";
-import { SchemaRegistry } from "../schema/registry.js";
+import { SchemaError, SchemaRegistry } from "../schema/registry.js";
 import { FTSManager } from "../search/fts-manager.js";
 import { setSiteSettings } from "../settings/index.js";
 import type { Storage } from "../storage/types.js";
@@ -123,14 +123,36 @@ export async function applySeed(
 		const registry = new SchemaRegistry(db);
 
 		for (const collection of seed.collections) {
-			// Check if collection exists
-			const existing = await registry.getCollection(collection.slug);
+			// Attempt to create the collection directly. createCollection does its
+			// own existence check inside a transaction, so we avoid a non-transactional
+			// pre-check here that Hyperdrive could cache as empty immediately after a
+			// prior collection was created in the same request.
+			let collectionExisted = false;
 
-			if (existing) {
-				if (onConflict === "error") {
-					throw new Error(`Conflict: collection "${collection.slug}" already exists`);
+			try {
+				await registry.createCollection({
+					slug: collection.slug,
+					label: collection.label,
+					labelSingular: collection.labelSingular,
+					description: collection.description,
+					icon: collection.icon,
+					supports: collection.supports || [],
+					source: "seed",
+					urlPattern: collection.urlPattern,
+					commentsEnabled: collection.commentsEnabled,
+				});
+				result.collections.created++;
+			} catch (err) {
+				if (!(err instanceof SchemaError) || err.code !== "COLLECTION_EXISTS") {
+					throw err;
 				}
+				collectionExisted = true;
+				if (onConflict === "error") {
+					throw new Error(`Conflict: collection "${collection.slug}" already exists`, { cause: err });
+				}
+			}
 
+			if (collectionExisted) {
 				if (onConflict === "update") {
 					await registry.updateCollection(collection.slug, {
 						label: collection.label,
@@ -183,21 +205,7 @@ export async function applySeed(
 				continue;
 			}
 
-			// Create collection
-			await registry.createCollection({
-				slug: collection.slug,
-				label: collection.label,
-				labelSingular: collection.labelSingular,
-				description: collection.description,
-				icon: collection.icon,
-				supports: collection.supports || [],
-				source: "seed",
-				urlPattern: collection.urlPattern,
-				commentsEnabled: collection.commentsEnabled,
-			});
-			result.collections.created++;
-
-			// Create fields
+			// Create fields (collection was just created above)
 			for (const field of collection.fields) {
 				await registry.createField(collection.slug, {
 					slug: field.slug,

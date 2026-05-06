@@ -124,12 +124,6 @@ export class SchemaRegistry {
 			throw new SchemaError(`Collection slug "${input.slug}" is reserved`, "RESERVED_SLUG");
 		}
 
-		// Check if collection already exists
-		const existing = await this.getCollection(input.slug);
-		if (existing) {
-			throw new SchemaError(`Collection "${input.slug}" already exists`, "COLLECTION_EXISTS");
-		}
-
 		const id = ulid();
 
 		// Insert collection record and create content table in a transaction
@@ -141,6 +135,17 @@ export class SchemaRegistry {
 		let collection: Collection | null = null;
 
 		await withTransaction(this.db, async (trx) => {
+			// Check existence inside the transaction so transactional reads bypass
+			// the Hyperdrive query cache and see the current DB state.
+			const existing = await trx
+				.selectFrom("_emdash_collections")
+				.where("slug", "=", input.slug)
+				.select("id")
+				.executeTakeFirst();
+			if (existing) {
+				throw new SchemaError(`Collection "${input.slug}" already exists`, "COLLECTION_EXISTS");
+			}
+
 			await trx
 				.insertInto("_emdash_collections")
 				.values({
@@ -341,39 +346,53 @@ export class SchemaRegistry {
 	 * Create a new field
 	 */
 	async createField(collectionSlug: string, input: CreateFieldInput): Promise<Field> {
-		const collection = await this.getCollection(collectionSlug);
-		if (!collection) {
-			throw new SchemaError(`Collection "${collectionSlug}" not found`, "COLLECTION_NOT_FOUND");
-		}
-
-		// Validate slug
+		// Validate slug before any DB work
 		this.validateSlug(input.slug, "field");
 		if (RESERVED_FIELD_SLUGS.includes(input.slug)) {
 			throw new SchemaError(`Field slug "${input.slug}" is reserved`, "RESERVED_SLUG");
 		}
 
-		// Check if field already exists
-		const existing = await this.getField(collectionSlug, input.slug);
-		if (existing) {
-			throw new SchemaError(
-				`Field "${input.slug}" already exists in collection "${collectionSlug}"`,
-				"FIELD_EXISTS",
-			);
-		}
-
 		const id = ulid();
 		const columnType = FIELD_TYPE_TO_COLUMN[input.type];
 
-		// Get max sort order
-		const maxSort = await this.db
-			.selectFrom("_emdash_fields")
-			.where("collection_id", "=", collection.id)
-			.select((eb) => eb.fn.max<number>("sort_order").as("max"))
-			.executeTakeFirst();
-
-		const sortOrder = input.sortOrder ?? (maxSort?.max ?? -1) + 1;
-
 		return withTransaction(this.db, async (trx) => {
+			// Read collection via trx to avoid Hyperdrive query cache returning a
+			// stale empty result when the collection was just created in a prior
+			// transaction. Transactional reads bypass the Hyperdrive cache.
+			const collection = await trx
+				.selectFrom("_emdash_collections")
+				.where("slug", "=", collectionSlug)
+				.selectAll()
+				.executeTakeFirst();
+
+			if (!collection) {
+				throw new SchemaError(`Collection "${collectionSlug}" not found`, "COLLECTION_NOT_FOUND");
+			}
+
+			// Check if field already exists (via trx for the same cache-bypass reason)
+			const existingField = await trx
+				.selectFrom("_emdash_fields")
+				.where("collection_id", "=", collection.id)
+				.where("slug", "=", input.slug)
+				.selectAll()
+				.executeTakeFirst();
+
+			if (existingField) {
+				throw new SchemaError(
+					`Field "${input.slug}" already exists in collection "${collectionSlug}"`,
+					"FIELD_EXISTS",
+				);
+			}
+
+			// Get max sort order (via trx)
+			const maxSort = await trx
+				.selectFrom("_emdash_fields")
+				.where("collection_id", "=", collection.id)
+				.select((eb) => eb.fn.max<number>("sort_order").as("max"))
+				.executeTakeFirst();
+
+			const sortOrder = input.sortOrder ?? (maxSort?.max ?? -1) + 1;
+
 			// Insert field record
 			await trx
 				.insertInto("_emdash_fields")
