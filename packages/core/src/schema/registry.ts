@@ -138,6 +138,8 @@ export class SchemaRegistry {
 		// Derive hasSeo from supports array if not explicitly set
 		const hasSeo = input.hasSeo ?? input.supports?.includes("seo") ?? false;
 
+		let collection: Collection | null = null;
+
 		await withTransaction(this.db, async (trx) => {
 			await trx
 				.insertInto("_emdash_collections")
@@ -158,9 +160,21 @@ export class SchemaRegistry {
 
 			// Create the content table for this collection
 			await this.createContentTable(input.slug, trx);
+
+			// Read via trx (not this.db) to avoid connection mutex deadlock on
+			// PostgreSQL/Hyperdrive where reading from this.db after a transaction
+			// may not see the just-committed row. Matches the pattern in createField.
+			const row = await trx
+				.selectFrom("_emdash_collections")
+				.where("slug", "=", input.slug)
+				.selectAll()
+				.executeTakeFirst();
+
+			if (row) {
+				collection = this.mapCollectionRow(row);
+			}
 		});
 
-		const collection = await this.getCollection(input.slug);
 		if (!collection) {
 			throw new SchemaError("Failed to create collection", "CREATE_FAILED");
 		}
