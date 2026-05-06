@@ -124,12 +124,6 @@ export class SchemaRegistry {
 			throw new SchemaError(`Collection slug "${input.slug}" is reserved`, "RESERVED_SLUG");
 		}
 
-		// Check if collection already exists
-		const existing = await this.getCollection(input.slug);
-		if (existing) {
-			throw new SchemaError(`Collection "${input.slug}" already exists`, "COLLECTION_EXISTS");
-		}
-
 		const id = ulid();
 
 		// Insert collection record and create content table in a transaction
@@ -141,6 +135,17 @@ export class SchemaRegistry {
 		let collection: Collection | null = null;
 
 		await withTransaction(this.db, async (trx) => {
+			// Check existence inside the transaction so transactional reads bypass
+			// the Hyperdrive query cache and see the current DB state.
+			const existing = await trx
+				.selectFrom("_emdash_collections")
+				.where("slug", "=", input.slug)
+				.select("id")
+				.executeTakeFirst();
+			if (existing) {
+				throw new SchemaError(`Collection "${input.slug}" already exists`, "COLLECTION_EXISTS");
+			}
+
 			await trx
 				.insertInto("_emdash_collections")
 				.values({
