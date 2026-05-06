@@ -15,7 +15,7 @@
 import { defineMiddleware } from "astro:middleware";
 
 import { getAuthMode } from "../../auth/mode.js";
-import { withTransaction } from "../../db/transaction.js";
+import { withTransaction } from "../../database/transaction.js";
 
 export const onRequest = defineMiddleware(async (context, next) => {
 	// Only check setup on admin routes (but not the setup page itself)
