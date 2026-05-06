@@ -118,7 +118,17 @@ export interface PostgresConfig {
 	user?: string;
 	password?: string;
 	ssl?: boolean;
-	pool?: { min?: number; max?: number };
+	pool?: {
+		min?: number;
+		max?: number;
+		/** Milliseconds before an idle connection is closed. Default: 10000. */
+		idleTimeoutMillis?: number;
+		/**
+		 * Milliseconds to wait for a connection before failing. Default: 5000.
+		 * Set this to avoid indefinite hangs when the pool is exhausted.
+		 */
+		connectionTimeoutMillis?: number;
+	};
 }
 
 /**
