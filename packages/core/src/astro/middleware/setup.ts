@@ -15,6 +15,7 @@
 import { defineMiddleware } from "astro:middleware";
 
 import { getAuthMode } from "../../auth/mode.js";
+import { withTransaction } from "../../db/transaction.js";
 
 export const onRequest = defineMiddleware(async (context, next) => {
 	// Only check setup on admin routes (but not the setup page itself)
@@ -31,52 +32,51 @@ export const onRequest = defineMiddleware(async (context, next) => {
 		}
 
 		try {
-			// Check setup_complete flag
-			const setupComplete = await emdash.db
-				.selectFrom("options")
-				.select("value")
-				.where("name", "=", "emdash:setup_complete")
-				.executeTakeFirst();
+			// Read setup_complete and user count in a single transaction so
+			// Hyperdrive bypasses its query cache and we always see the values
+			// written by the preceding setup/admin-verify request.
+			const { isComplete, userCount } = await withTransaction(emdash.db, async (trx) => {
+				const completeRow = await trx
+					.selectFrom("options")
+					.select("value")
+					.where("name", "=", "emdash:setup_complete")
+					.executeTakeFirst();
 
-			// Value is JSON-encoded, parse it. Accepts both boolean true and string "true"
-			const isComplete =
-				setupComplete &&
-				(() => {
-					try {
-						const parsed = JSON.parse(setupComplete.value);
-						return parsed === true || parsed === "true";
-					} catch {
-						return false;
-					}
-				})();
+				const complete =
+					completeRow &&
+					(() => {
+						try {
+							const parsed = JSON.parse(completeRow.value);
+							return parsed === true || parsed === "true";
+						} catch {
+							return false;
+						}
+					})();
+
+				const countResult = await trx
+					.selectFrom("users")
+					.select((eb) => eb.fn.countAll<number>().as("count"))
+					.executeTakeFirst();
+
+				return { isComplete: complete, userCount: Number(countResult?.count ?? 0) };
+			});
 
 			if (!isComplete) {
-				// Redirect to setup wizard
 				return context.redirect("/_emdash/admin/setup");
 			}
 
-			// Check auth mode - user verification differs by mode
 			const authMode = getAuthMode(emdash.config);
 
-			// In passkey mode, verify users exist
-			// In Access mode, skip this check - first user is created on first Access login
-			if (authMode.type === "passkey") {
-				// Setup is marked complete, but verify users exist
-				// This catches edge case where setup_complete is true but no users
-				const userCount = await emdash.db
-					.selectFrom("users")
-					.select((eb) => eb.fn.countAll<number>().as("count"))
-					.executeTakeFirstOrThrow();
-
-				if (userCount.count === 0) {
-					// No users - need to complete admin creation
-					return context.redirect("/_emdash/admin/setup");
-				}
+			if (authMode.type === "passkey" && userCount === 0) {
+				return context.redirect("/_emdash/admin/setup");
 			}
 		} catch (error) {
 			// If the options table doesn't exist yet, redirect to setup
 			// This handles fresh installations where migrations haven't run
-			if (error instanceof Error && error.message.includes("no such table")) {
+			if (
+				error instanceof Error &&
+				(error.message.includes("no such table") || error.message.includes("does not exist"))
+			) {
 				return context.redirect("/_emdash/admin/setup");
 			}
 

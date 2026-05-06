@@ -19,6 +19,7 @@ import { setupAdminVerifyBody } from "#api/schemas.js";
 import { createChallengeStore } from "#auth/challenge-store.js";
 import { getPasskeyConfig } from "#auth/passkey-config.js";
 import { OptionsRepository } from "#db/repositories/options.js";
+import { withTransaction } from "#db/transaction.js";
 
 export const POST: APIRoute = async ({ request, locals }) => {
 	const { emdash } = locals;
@@ -28,28 +29,66 @@ export const POST: APIRoute = async ({ request, locals }) => {
 	}
 
 	try {
-		// Check if setup is already complete
-		const options = new OptionsRepository(emdash.db);
-		const setupComplete = await options.get("emdash:setup_complete");
+		// Read all setup-state values in a single transaction so Hyperdrive
+		// bypasses its query cache and we always see the values written by the
+		// preceding admin-options request in the same setup flow.
+		const { setupComplete, userCount, setupState } = await withTransaction(
+			emdash.db,
+			async (trx) => {
+				const completeRow = await trx
+					.selectFrom("options")
+					.select("value")
+					.where("name", "=", "emdash:setup_complete")
+					.executeTakeFirst();
+				const sc = completeRow
+					? (() => {
+							try {
+								return JSON.parse(completeRow.value);
+							} catch {
+								return null;
+							}
+						})()
+					: null;
+
+				const countResult = await trx
+					.selectFrom("users")
+					.select((eb) => eb.fn.countAll<number>().as("count"))
+					.executeTakeFirst();
+				const uc = countResult?.count ?? 0;
+
+				const stateRow = await trx
+					.selectFrom("options")
+					.select("value")
+					.where("name", "=", "emdash:setup_state")
+					.executeTakeFirst();
+				const ss = stateRow
+					? (() => {
+							try {
+								return JSON.parse(stateRow.value);
+							} catch {
+								return null;
+							}
+						})()
+					: null;
+
+				return { setupComplete: sc, userCount: uc, setupState: ss };
+			},
+		);
 
 		if (setupComplete === true || setupComplete === "true") {
 			return apiError("SETUP_COMPLETE", "Setup already complete", 400);
 		}
 
-		// Check if any users exist
-		const adapter = createKyselyAdapter(emdash.db);
-		const userCount = await adapter.countUsers();
-
 		if (userCount > 0) {
 			return apiError("ADMIN_EXISTS", "Admin user already exists", 400);
 		}
 
-		// Get setup state
-		const setupState = await options.get("emdash:setup_state");
-
 		if (!setupState || setupState.step !== "admin") {
 			return apiError("INVALID_STATE", "Invalid setup state. Please restart setup.", 400);
 		}
+
+		const adapter = createKyselyAdapter(emdash.db);
+		const options = new OptionsRepository(emdash.db);
 
 		// Parse request body
 		const body = await parseBody(request, setupAdminVerifyBody);

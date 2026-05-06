@@ -15,6 +15,7 @@ import { setupBody } from "#api/schemas.js";
 import { getAuthMode } from "#auth/mode.js";
 import { runMigrations } from "#db/migrations/runner.js";
 import { OptionsRepository } from "#db/repositories/options.js";
+import { withTransaction } from "#db/transaction.js";
 import { applySeed } from "#seed/apply.js";
 import { loadSeed } from "#seed/load.js";
 import { validateSeed } from "#seed/validate.js";
@@ -28,11 +29,27 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
 
 	try {
 		// Guard: reject if setup has already been completed.
+		// Use a transaction so Hyperdrive bypasses its query cache and we see
+		// the true value rather than a stale null from a recent write.
 		// The options table may not exist on first-ever setup (pre-migration),
 		// so a query failure means setup hasn't run yet — allow it to proceed.
 		try {
-			const options = new OptionsRepository(emdash.db);
-			const setupComplete = await options.get("emdash:setup_complete");
+			const setupCompleteRow = await withTransaction(emdash.db, async (trx) =>
+				trx
+					.selectFrom("options")
+					.select("value")
+					.where("name", "=", "emdash:setup_complete")
+					.executeTakeFirst(),
+			);
+			const setupComplete = setupCompleteRow
+				? (() => {
+						try {
+							return JSON.parse(setupCompleteRow.value);
+						} catch {
+							return null;
+						}
+					})()
+				: null;
 
 			if (setupComplete === true || setupComplete === "true") {
 				return apiError("ALREADY_CONFIGURED", "Setup has already been completed", 409);
