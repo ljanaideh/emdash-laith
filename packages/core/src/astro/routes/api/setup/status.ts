@@ -10,6 +10,7 @@ export const prerender = false;
 
 import { apiError, apiSuccess, handleError } from "#api/error.js";
 import { getAuthMode } from "#auth/mode.js";
+import { withTransaction } from "#db/transaction.js";
 import { loadUserSeed } from "#seed/load.js";
 
 export const GET: APIRoute = async ({ locals }) => {
@@ -20,36 +21,49 @@ export const GET: APIRoute = async ({ locals }) => {
 	}
 
 	try {
-		// Check if setup is complete
-		const setupComplete = await emdash.db
-			.selectFrom("options")
-			.select("value")
-			.where("name", "=", "emdash:setup_complete")
-			.executeTakeFirst();
+		// Read all setup-state values in a single transaction so Hyperdrive
+		// bypasses its query cache and we always see the latest written values.
+		const { isComplete, hasUsers, setupState } = await withTransaction(emdash.db, async (trx) => {
+			const completeRow = await trx
+				.selectFrom("options")
+				.select("value")
+				.where("name", "=", "emdash:setup_complete")
+				.executeTakeFirst();
 
-		// Value is JSON-encoded, parse it. Accepts both boolean true and string "true"
-		const isComplete =
-			setupComplete &&
-			(() => {
-				try {
-					const parsed = JSON.parse(setupComplete.value);
-					return parsed === true || parsed === "true";
-				} catch {
-					return false;
-				}
-			})();
+			const complete =
+				completeRow &&
+				(() => {
+					try {
+						const parsed = JSON.parse(completeRow.value);
+						return parsed === true || parsed === "true";
+					} catch {
+						return false;
+					}
+				})();
 
-		// Also check if users exist
-		let hasUsers = false;
-		try {
-			const userCount = await emdash.db
+			const countResult = await trx
 				.selectFrom("users")
 				.select((eb) => eb.fn.countAll<number>().as("count"))
-				.executeTakeFirstOrThrow();
-			hasUsers = userCount.count > 0;
-		} catch {
-			// Users table might not exist yet
-		}
+				.executeTakeFirst();
+			const foundUsers = Number(countResult?.count ?? 0) > 0;
+
+			const stateRow = await trx
+				.selectFrom("options")
+				.select("value")
+				.where("name", "=", "emdash:setup_state")
+				.executeTakeFirst();
+			const state = stateRow
+				? (() => {
+						try {
+							return JSON.parse(stateRow.value);
+						} catch {
+							return null;
+						}
+					})()
+				: null;
+
+			return { isComplete: complete, hasUsers: foundUsers, setupState: state };
+		});
 
 		// Setup is complete only if flag is set AND users exist
 		if (isComplete && hasUsers) {
@@ -62,23 +76,11 @@ export const GET: APIRoute = async ({ locals }) => {
 		// step: "start" | "site" | "admin" | "complete"
 		let step: "start" | "site" | "admin" = "start";
 
-		// Get setup state if it exists
-		const setupState = await emdash.db
-			.selectFrom("options")
-			.select("value")
-			.where("name", "=", "emdash:setup_state")
-			.executeTakeFirst();
-
 		if (setupState) {
-			try {
-				const state = JSON.parse(setupState.value);
-				if (state.step === "admin") {
-					step = "admin";
-				} else if (state.step === "site") {
-					step = "site";
-				}
-			} catch {
-				// Invalid state, stay at start
+			if (setupState.step === "admin") {
+				step = "admin";
+			} else if (setupState.step === "site") {
+				step = "site";
 			}
 		}
 
