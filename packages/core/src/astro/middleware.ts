@@ -487,7 +487,9 @@ export const onRequest = defineMiddleware(async (context, next) => {
 				console.log(`[mw] ${url.pathname} — calling next()`);
 				const t0 = performance.now();
 				const response = await next();
-				console.log(`[mw] ${url.pathname} — next() done in ${Math.round(performance.now() - t0)}ms`);
+				console.log(
+					`[mw] ${url.pathname} — next() done in ${Math.round(performance.now() - t0)}ms`,
+				);
 				timings.push({ name: "render", dur: performance.now() - t0, desc: "Page render" });
 				timings.push({ name: "mw", dur: performance.now() - mwStart, desc: "Total middleware" });
 				return finalizeResponse(response, timings);

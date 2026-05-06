@@ -163,7 +163,9 @@ export async function applySeed(
 				}
 				collectionExisted = true;
 				if (onConflict === "error") {
-					throw new Error(`Conflict: collection "${collection.slug}" already exists`, { cause: err });
+					throw new Error(`Conflict: collection "${collection.slug}" already exists`, {
+						cause: err,
+					});
 				}
 			}
 

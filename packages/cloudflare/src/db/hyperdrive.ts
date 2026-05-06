@@ -72,10 +72,11 @@ export function createDialect(config: HyperdriveConfig): PostgresDialect {
 				await client.connect();
 				// Kysely calls release() when it's done with the connection.
 				// We close the Client rather than returning it to a pool.
-				(client as Client & { release: (destroy?: boolean) => Promise<void> }).release =
-					async (_destroy?: boolean) => {
-						await client.end().catch(() => {});
-					};
+				(client as Client & { release: (destroy?: boolean) => Promise<void> }).release = async (
+					_destroy?: boolean,
+				) => {
+					await client.end().catch(() => {});
+				};
 				return client as Client & { release: (destroy?: boolean) => Promise<void> };
 			})();
 
