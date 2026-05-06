@@ -36,6 +36,21 @@ import type {
 const FILE_EXTENSION_PATTERN = /\.([a-z0-9]+)(?:\?|$)/i;
 import { validateSeed } from "./validate.js";
 
+/**
+ * Returns true if the error is a unique-constraint / duplicate-key violation.
+ * Detects across PostgreSQL (code 23505), better-sqlite3 (SQLITE_CONSTRAINT_UNIQUE),
+ * and libSQL/D1 (message substring).
+ */
+function isDuplicateKeyError(err: unknown): boolean {
+	if (!(err instanceof Error)) return false;
+	const e = err as Error & { code?: string };
+	return (
+		e.code === "23505" ||
+		e.code === "SQLITE_CONSTRAINT_UNIQUE" ||
+		(typeof e.message === "string" && e.message.includes("UNIQUE constraint failed"))
+	);
+}
+
 /** Pattern to remove file extensions */
 const EXTENSION_PATTERN = /\.[^.]+$/;
 
@@ -227,37 +242,17 @@ export async function applySeed(
 	// 4-5. Taxonomies
 	if (seed.taxonomies) {
 		for (const taxonomy of seed.taxonomies) {
-			// Check if taxonomy definition exists
-			const existingDef = await db
-				.selectFrom("_emdash_taxonomy_defs")
-				.selectAll()
-				.where("name", "=", taxonomy.name)
-				.executeTakeFirst();
-
-			if (existingDef) {
-				if (onConflict === "error") {
-					throw new Error(`Conflict: taxonomy "${taxonomy.name}" already exists`);
-				}
-				if (onConflict === "update") {
-					await db
-						.updateTable("_emdash_taxonomy_defs")
-						.set({
-							label: taxonomy.label,
-							label_singular: taxonomy.labelSingular ?? null,
-							hierarchical: taxonomy.hierarchical ? 1 : 0,
-							collections: JSON.stringify(taxonomy.collections),
-						})
-						.where("id", "=", existingDef.id)
-						.execute();
-					// Taxonomy defs don't track an "updated" counter -- just the definition is updated
-				}
-				// skip: do nothing for the definition
-			} else {
-				// Create taxonomy definition
+			// Attempt INSERT first rather than SELECT then INSERT to avoid
+			// Hyperdrive caching the pre-check as empty right before the INSERT.
+			// Transactional reads bypass the Hyperdrive cache; standalone SELECTs
+			// do not, so a pre-check executed moments after a prior collection
+			// INSERT can return a stale null and then re-insert a duplicate row.
+			const defId = ulid();
+			try {
 				await db
 					.insertInto("_emdash_taxonomy_defs")
 					.values({
-						id: ulid(),
+						id: defId,
 						name: taxonomy.name,
 						label: taxonomy.label,
 						label_singular: taxonomy.labelSingular ?? null,
@@ -266,6 +261,34 @@ export async function applySeed(
 					})
 					.execute();
 				result.taxonomies.created++;
+			} catch (insertErr) {
+				if (!isDuplicateKeyError(insertErr)) throw insertErr;
+				// Row already exists — handle per onConflict
+				if (onConflict === "error") {
+					throw new Error(`Conflict: taxonomy "${taxonomy.name}" already exists`, {
+						cause: insertErr,
+					});
+				}
+				if (onConflict === "update") {
+					const existingDef = await db
+						.selectFrom("_emdash_taxonomy_defs")
+						.select("id")
+						.where("name", "=", taxonomy.name)
+						.executeTakeFirst();
+					if (existingDef) {
+						await db
+							.updateTable("_emdash_taxonomy_defs")
+							.set({
+								label: taxonomy.label,
+								label_singular: taxonomy.labelSingular ?? null,
+								hierarchical: taxonomy.hierarchical ? 1 : 0,
+								collections: JSON.stringify(taxonomy.collections),
+							})
+							.where("id", "=", existingDef.id)
+							.execute();
+					}
+				}
+				// skip: do nothing for the definition
 			}
 
 			// Create terms (if provided)
