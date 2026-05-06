@@ -1,0 +1,316 @@
+---
+title: PostgreSQL on Cloudflare Workers (Hyperdrive)
+description: Deploy EmDash on Cloudflare Workers with a PostgreSQL database via Cloudflare Hyperdrive, including pool configuration, caching gotchas, and production safeguards.
+---
+
+import { Aside, Steps, Tabs, TabItem } from "@astrojs/starlight/components";
+
+This guide covers deploying EmDash on Cloudflare Workers using [Cloudflare Hyperdrive](https://developers.cloudflare.com/hyperdrive/) to connect to a PostgreSQL database (AWS RDS, Supabase, Neon, or any PostgreSQL provider).
+
+## How It Works
+
+Hyperdrive sits between your Worker and PostgreSQL. It maintains a warm connection pool at the Cloudflare edge, so each Worker request opens a fast local connection to Hyperdrive rather than a slow cross-region TCP handshake to your database.
+
+```
+Browser → Cloudflare Worker → Hyperdrive (edge pool) → PostgreSQL (AWS RDS / Supabase / Neon)
+```
+
+EmDash's `@emdash-cms/cloudflare` package provides a Hyperdrive-aware Kysely dialect that creates a fresh `pg.Client` per query — re-reading `env.HYPERDRIVE.connectionString` each time — so the Worker never holds stale connections.
+
+## Setup
+
+<Steps>
+
+1. **Create a PostgreSQL database**
+
+   Any provider works. For AWS RDS:
+   - Create a PostgreSQL 15+ instance
+   - Set **Publicly Accessible = yes** (or configure VPC peering)
+   - Open port `5432` to Cloudflare's IP ranges in your security group
+   - Note: endpoint, port, database name, username, password
+
+2. **Create a Hyperdrive config**
+
+   ```bash
+   npx wrangler hyperdrive create emdash-prod \
+     --connection-string "postgresql://user:pass@your-db.example.com:5432/dbname"
+   ```
+
+   Save the returned Hyperdrive config ID.
+
+3. **Add the binding to `wrangler.jsonc`**
+
+   ```jsonc
+   {
+     "hyperdrive": [
+       {
+         "binding": "HYPERDRIVE",
+         "id": "your-hyperdrive-config-id"
+       }
+     ]
+   }
+   ```
+
+4. **Configure EmDash in `astro.config.mjs`**
+
+   ```js
+   import { defineConfig } from "astro/config";
+   import cloudflare from "@astrojs/cloudflare";
+   import emdash from "emdash";
+   import { hyperdrive } from "@emdash-cms/cloudflare";
+
+   export default defineConfig({
+     adapter: cloudflare({ platformProxy: { enabled: true } }),
+     integrations: [
+       emdash({
+         database: hyperdrive({
+           binding: "HYPERDRIVE",
+           pool: {
+             min: 2,
+             max: 5,
+             idleTimeoutMillis: 10_000,
+             connectionTimeoutMillis: 5_000,
+           },
+         }),
+       }),
+     ],
+   });
+   ```
+
+5. **Set local dev connection string**
+
+   Create `.dev.vars` in your project root:
+
+   ```env
+   HYPERDRIVE_LOCAL_CONNECTION_STRING=postgresql://user:pass@your-db.example.com:5432/dbname
+   ```
+
+6. **Generate TypeScript types**
+
+   ```bash
+   npx wrangler types
+   ```
+
+   This generates `worker-configuration.d.ts` with the correct `HYPERDRIVE` binding type.
+
+7. **Deploy**
+
+   ```bash
+   npx wrangler deploy
+   ```
+
+   Then visit `/_emdash/admin/setup` in a regular browser window (not incognito — passkeys require credential storage) to run the setup wizard.
+
+</Steps>
+
+## Pool Configuration
+
+The pool settings passed to `hyperdrive()` control how EmDash manages connections **per Worker isolate**. Size them using this formula:
+
+```
+(pods × processes × pool.max) + background_connections + admin_connections  <  max_connections × 0.7
+```
+
+| Setting | Recommended | Why |
+|---|---|---|
+| `min` | `2` | Keeps 2 connections warm, absorbs cold-start bursts without TCP/TLS overhead |
+| `max` | `5` | Tight ceiling per pod — leave room to scale horizontally |
+| `idleTimeoutMillis` | `10000` | Release idle connections after 10s |
+| `connectionTimeoutMillis` | `5000` | Fail fast when pool is exhausted — never hang |
+
+<Aside type="caution">
+**Never use the default `max: 10` in production.** Ten Workers at `max: 10` = 100 connections, which exhausts PostgreSQL's default `max_connections = 100` immediately with zero headroom for migrations, workers, or admin tools.
+</Aside>
+
+### Worked example
+
+10 Worker instances, 1 process each, `pool.max = 5`:
+
+```
+(10 × 1 × 5) + 5 (background) + 10 (admin) = 65
+max_connections = 200  →  70% cap = 140
+65 < 140  ✅  safe
+```
+
+At `max: 5` you can safely run ~18 pods against a `max_connections = 200` PostgreSQL instance before needing PgBouncer.
+
+## PostgreSQL Server Configuration
+
+Set these in `postgresql.conf` or your provider's configuration panel:
+
+```ini
+max_connections = 200
+statement_timeout = 30000                      # kill queries running > 30s
+idle_in_transaction_session_timeout = 10000    # kill idle-in-transaction sessions after 10s
+shared_buffers = 256MB                         # ~25% of RAM
+work_mem = 8MB                                 # per query, per sort
+```
+
+`idle_in_transaction_session_timeout` is critical: without it, a client that opens a transaction and crashes before closing it holds its locks and connection slot indefinitely.
+
+## SSL Configuration
+
+<Tabs>
+  <TabItem label="RDS / standard providers">
+    ```env
+    DATABASE_URL=postgresql://user:pass@host:5432/db?sslmode=require
+    ```
+
+    Hyperdrive handles TLS between the Worker and Hyperdrive's proxy. The `pg.Client` inside the Worker connects to Hyperdrive's local endpoint without TLS (`ssl: false`). This is correct — do not override it.
+  </TabItem>
+  <TabItem label="Self-signed certificates (Neon, Supabase)">
+    Some managed providers use self-signed certificates. Pass this when creating the Hyperdrive config:
+
+    ```bash
+    npx wrangler hyperdrive create emdash-prod \
+      --connection-string "postgresql://..." \
+      --caching-disabled    # optional, if you want full cache control
+    ```
+
+    And in the pool config:
+    ```js
+    pool: {
+      ssl: { rejectUnauthorized: false },
+    }
+    ```
+
+    <Aside type="caution">
+    Do not use `rejectUnauthorized: false` on RDS or providers that issue CA-signed certificates. It disables certificate validation entirely.
+    </Aside>
+  </TabItem>
+</Tabs>
+
+## The Hyperdrive Caching Problem
+
+<Aside type="danger">
+This is the most common source of subtle bugs when deploying EmDash on Hyperdrive. Read this section carefully.
+</Aside>
+
+Hyperdrive caches **non-transactional reads** for up to ~60 seconds at the nearest edge replica. This is invisible in development (SQLite has no cache layer) and only manifests in production.
+
+**The pattern it breaks:** any code that reads state immediately after writing it.
+
+```
+Request A: writes setup_complete = true
+Request B: reads setup_complete  →  gets cached null  →  wrong branch taken
+```
+
+**The fix:** wrap every read that follows a recent write in `withTransaction`. Kysely transactions force Hyperdrive to route to the primary, bypassing the cache.
+
+```ts
+// WRONG — may return stale cached value
+const row = await db
+  .selectFrom("options")
+  .where("name", "=", "emdash:setup_complete")
+  .executeTakeFirst();
+
+// RIGHT — bypasses Hyperdrive cache
+const row = await withTransaction(db, (trx) =>
+  trx
+    .selectFrom("options")
+    .where("name", "=", "emdash:setup_complete")
+    .executeTakeFirst()
+);
+```
+
+### INSERT-then-catch instead of SELECT-then-INSERT
+
+Pre-check `SELECT` queries are cached. If you check for existence before inserting, the cached null will cause duplicate inserts. Let the database enforce uniqueness atomically:
+
+```ts
+// WRONG — SELECT is cached, INSERT duplicates
+const existing = await db
+  .selectFrom("collections")
+  .where("slug", "=", slug)
+  .executeTakeFirst();
+if (!existing) await db.insertInto("collections").values({...}).execute();
+
+// RIGHT — atomic, cache-safe
+try {
+  await db.insertInto("collections").values({...}).execute();
+} catch (err) {
+  if (isDuplicateKeyError(err)) return; // already exists, fine
+  throw err;
+}
+```
+
+Use this helper to detect duplicates across all three drivers:
+
+```ts
+function isDuplicateKeyError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const e = err as Error & { code?: string };
+  return (
+    e.code === "23505" ||                            // PostgreSQL
+    e.code === "SQLITE_CONSTRAINT_UNIQUE" ||         // better-sqlite3
+    e.message.includes("UNIQUE constraint failed")   // libSQL
+  );
+}
+```
+
+## PostgreSQL vs SQLite Differences
+
+| Topic | SQLite (dev) | PostgreSQL (prod via Hyperdrive) |
+|---|---|---|
+| JSON extraction | `json_extract(data, '$.field')` | `data->>'field'` |
+| Reserved keywords | Lenient | Strict — quote `"window"`, `"order"`, etc. in raw SQL |
+| Read-after-write | Immediate | Must use transaction to bypass Hyperdrive cache |
+| Duplicate detection | `SQLITE_CONSTRAINT_UNIQUE` | Error code `23505` |
+| Booleans | `0` / `1` | `true` / `false` or `0` / `1` |
+
+### Reserved keywords in raw SQL
+
+PostgreSQL enforces reserved keywords strictly. `window` is a common one that works in SQLite but breaks in PostgreSQL:
+
+```sql
+-- WRONG — works in SQLite, syntax error in PostgreSQL
+INSERT INTO _emdash_rate_limits (key, window, count) VALUES (...)
+
+-- RIGHT — always quote column names that are keywords
+INSERT INTO _emdash_rate_limits (key, "window", count) VALUES (...)
+```
+
+## PgBouncer (When You Need It)
+
+Add PgBouncer when `pods × pool.max > 100` (roughly 20+ pods at `max: 5`).
+
+```ini
+pool_mode = transaction      # correct for EmDash's stateless SSR
+max_client_conn = 1000
+default_pool_size = 20
+```
+
+**Transaction pooling limitations** — do not use these features in EmDash routes when behind PgBouncer in transaction mode:
+
+- `SET` session variables
+- Named prepared statements
+- `LISTEN` / `NOTIFY`
+- Advisory locks held across queries
+- Cursors held open across statements
+
+EmDash's Kysely-based handlers use anonymous queries and are compatible with transaction pooling out of the box.
+
+## Observability
+
+Track these metrics in production:
+
+| Metric | What it tells you |
+|---|---|
+| `pg_stat_activity` count | Live connection usage vs `max_connections` |
+| Pool waiting clients | Queue depth — early warning of pool exhaustion |
+| Query duration p99 | Slow queries holding connections |
+| Connection error rate | Pool exhaustion or database instability |
+
+## Failure Mode Strategy
+
+| Failure | Without safeguards | With safeguards |
+|---|---|---|
+| Pool exhausted | Request hangs until OS timeout | Returns 503 via `connectionTimeoutMillis` |
+| Query timeout | Request hangs | Returns 503 via `statement_timeout` |
+| DB unreachable | 500 with stack trace | Returns 503 with `Retry-After` |
+
+Always return **503** (Service Unavailable), not 500. 503 signals to load balancers that the request is safe to retry. 500 signals a bug.
+
+## Passkey Registration
+
+Passkey registration does not work in incognito/private browsing mode — Chrome and Edge do not save credentials to the OS credential store in incognito. Use a regular browser window when completing the setup wizard.
