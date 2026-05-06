@@ -301,22 +301,7 @@ export async function applySeed(
 				} else {
 					// Flat taxonomy - create all terms
 					for (const term of taxonomy.terms) {
-						const existing = await termRepo.findBySlug(taxonomy.name, term.slug);
-						if (existing) {
-							if (onConflict === "error") {
-								throw new Error(
-									`Conflict: taxonomy term "${term.slug}" in "${taxonomy.name}" already exists`,
-								);
-							}
-							if (onConflict === "update") {
-								await termRepo.update(existing.id, {
-									label: term.label,
-									data: term.description ? { description: term.description } : {},
-								});
-								result.taxonomies.terms++;
-							}
-							// skip: do nothing
-						} else {
+						try {
 							await termRepo.create({
 								name: taxonomy.name,
 								slug: term.slug,
@@ -324,6 +309,25 @@ export async function applySeed(
 								data: term.description ? { description: term.description } : undefined,
 							});
 							result.taxonomies.terms++;
+						} catch (createErr) {
+							if (!isDuplicateKeyError(createErr)) throw createErr;
+							if (onConflict === "error") {
+								throw new Error(
+									`Conflict: taxonomy term "${term.slug}" in "${taxonomy.name}" already exists`,
+									{ cause: createErr },
+								);
+							}
+							if (onConflict === "update") {
+								const existing = await termRepo.findBySlug(taxonomy.name, term.slug);
+								if (existing) {
+									await termRepo.update(existing.id, {
+										label: term.label,
+										data: term.description ? { description: term.description } : {},
+									});
+									result.taxonomies.terms++;
+								}
+							}
+							// skip: do nothing
 						}
 					}
 				}
@@ -716,23 +720,7 @@ async function applyHierarchicalTerms(
 			if (!term.parent || slugToId.has(term.parent)) {
 				const parentId = term.parent ? slugToId.get(term.parent) : undefined;
 
-				const existing = await termRepo.findBySlug(taxonomyName, term.slug);
-				if (existing) {
-					if (onConflict === "error") {
-						throw new Error(
-							`Conflict: taxonomy term "${term.slug}" in "${taxonomyName}" already exists`,
-						);
-					}
-					if (onConflict === "update") {
-						await termRepo.update(existing.id, {
-							label: term.label,
-							parentId,
-							data: term.description ? { description: term.description } : {},
-						});
-						result.taxonomies.terms++;
-					}
-					slugToId.set(term.slug, existing.id);
-				} else {
+				try {
 					const created = await termRepo.create({
 						name: taxonomyName,
 						slug: term.slug,
@@ -742,6 +730,27 @@ async function applyHierarchicalTerms(
 					});
 					slugToId.set(term.slug, created.id);
 					result.taxonomies.terms++;
+				} catch (createErr) {
+					if (!isDuplicateKeyError(createErr)) throw createErr;
+					if (onConflict === "error") {
+						throw new Error(
+							`Conflict: taxonomy term "${term.slug}" in "${taxonomyName}" already exists`,
+							{ cause: createErr },
+						);
+					}
+					// Resolve ID for parent-child chain regardless of skip/update
+					const existing = await termRepo.findBySlug(taxonomyName, term.slug);
+					if (existing) {
+						if (onConflict === "update") {
+							await termRepo.update(existing.id, {
+								label: term.label,
+								parentId,
+								data: term.description ? { description: term.description } : {},
+							});
+							result.taxonomies.terms++;
+						}
+						slugToId.set(term.slug, existing.id);
+					}
 				}
 
 				processedThisPass.push(term.slug);

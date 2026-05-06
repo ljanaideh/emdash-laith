@@ -61,11 +61,12 @@ export async function checkRateLimit(
 	).toISOString();
 	const key = `${ip}:${endpoint}`;
 
-	// Atomic upsert: insert or increment, return current count
+	// Atomic upsert: insert or increment, return current count.
+	// "window" must be quoted — it is a reserved keyword in PostgreSQL.
 	const result = await sql<{ count: number }>`
-		INSERT INTO _emdash_rate_limits (key, window, count)
+		INSERT INTO _emdash_rate_limits (key, "window", count)
 		VALUES (${key}, ${windowStart}, 1)
-		ON CONFLICT (key, window)
+		ON CONFLICT (key, "window")
 		DO UPDATE SET count = _emdash_rate_limits.count + 1
 		RETURNING count
 	`.execute(db);
@@ -151,7 +152,7 @@ export async function cleanupExpiredRateLimits(
 	const cutoff = new Date(Date.now() - maxAgeSeconds * 1000).toISOString();
 
 	const result = await sql`
-		DELETE FROM _emdash_rate_limits WHERE window < ${cutoff}
+		DELETE FROM _emdash_rate_limits WHERE "window" < ${cutoff}
 	`.execute(db);
 
 	return Number(result.numAffectedRows ?? 0);
