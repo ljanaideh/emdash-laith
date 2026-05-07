@@ -22,6 +22,7 @@ Hyperdrive maintains warm connections at the edge. The Worker creates a fresh `p
 Any `SELECT` that is not inside `BEGIN...COMMIT` is served from a read replica cache. This is invisible in development (SQLite has no cache) and only shows up in production.
 
 **Pattern that breaks:**
+
 1. Request A writes a value
 2. Request B reads it → gets cached stale value → takes wrong branch
 
@@ -33,7 +34,7 @@ const row = await db.selectFrom("options").where("name", "=", "key").executeTake
 
 // RIGHT — transaction bypasses Hyperdrive cache
 const row = await withTransaction(db, (trx) =>
-  trx.selectFrom("options").where("name", "=", "key").executeTakeFirst()
+	trx.selectFrom("options").where("name", "=", "key").executeTakeFirst(),
 );
 ```
 
@@ -86,6 +87,7 @@ function isDuplicateKeyError(err: unknown): boolean {
 **Cause:** `window` is a PostgreSQL reserved keyword. Works unquoted in SQLite, breaks in PostgreSQL.
 
 **Fix:** Quote it in all raw SQL:
+
 ```sql
 -- WRONG
 INSERT INTO _emdash_rate_limits (key, window, count) ...
@@ -109,6 +111,7 @@ Check every raw SQL string for other reserved keywords: `order`, `group`, `user`
 **Cause:** Seed ran partially before, or Hyperdrive cached the pre-check SELECT as null, causing a second INSERT.
 
 **Fix:**
+
 1. Clean up the partial DB state
 2. Switch from SELECT-then-INSERT to INSERT-then-catch-duplicate (see above)
 3. All seed reads must use `withTransaction`
@@ -117,14 +120,14 @@ Check every raw SQL string for other reserved keywords: `order`, `group`, `user`
 
 When a read returns stale data after a write, check these files in order:
 
-| File | Reads that need `withTransaction` |
-|---|---|
-| `packages/core/src/schema/registry.ts` | Collection existence in `createCollection`; all reads in `createField` |
-| `packages/core/src/seed/apply.ts` | Collection, taxonomy def, and term existence checks |
-| `packages/core/src/astro/routes/api/setup/admin-verify.ts` | `setup_complete`, `userCount`, `setup_state` |
-| `packages/core/src/astro/middleware/setup.ts` | `setup_complete`, `userCount` |
-| `packages/core/src/astro/routes/api/setup/status.ts` | `setup_complete`, `userCount`, `setup_state` |
-| `packages/core/src/astro/routes/api/setup/index.ts` | `setup_complete` guard |
+| File                                                       | Reads that need `withTransaction`                                      |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `packages/core/src/schema/registry.ts`                     | Collection existence in `createCollection`; all reads in `createField` |
+| `packages/core/src/seed/apply.ts`                          | Collection, taxonomy def, and term existence checks                    |
+| `packages/core/src/astro/routes/api/setup/admin-verify.ts` | `setup_complete`, `userCount`, `setup_state`                           |
+| `packages/core/src/astro/middleware/setup.ts`              | `setup_complete`, `userCount`                                          |
+| `packages/core/src/astro/routes/api/setup/status.ts`       | `setup_complete`, `userCount`, `setup_state`                           |
+| `packages/core/src/astro/routes/api/setup/index.ts`        | `setup_complete` guard                                                 |
 
 ## Setup Checklist (Fresh Deployment)
 
