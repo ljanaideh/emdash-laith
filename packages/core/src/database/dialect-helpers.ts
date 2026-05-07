@@ -128,14 +128,14 @@ export function binaryType(db: Kysely<any>): ColumnDataType {
  * SQL expression for extracting a field from a JSON/JSONB column.
  *
  * sqlite:   json_extract(column, '$.path')
- * postgres: column->>'path'
+ * postgres: column::jsonb->>'path'
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- accepts any Kysely instance
 export function jsonExtractExpr(db: Kysely<any>, column: string, path: string): string {
 	validateIdentifier(column, "JSON column name");
 	validateJsonFieldName(path, "JSON path");
 	if (isPostgres(db)) {
-		return `${column}->>'${path}'`;
+		return `${column}::jsonb->>'${path}'`;
 	}
 	return `json_extract(${column}, '$.${path}')`;
 }
