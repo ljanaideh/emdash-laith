@@ -5,15 +5,14 @@ import {
 	hyperdrive,
 	r2,
 	sandbox,
-//	cloudflareCache,
+	//	cloudflareCache,
 } from "@emdash-cms/cloudflare";
 import { formsPlugin } from "@emdash-cms/plugin-forms";
+import { notifyOnPublishPlugin } from "@emdash-cms/plugin-notify-on-publish";
+import { notifyPostmarkPlugin } from "@emdash-cms/plugin-notify-postmark";
 import { webhookNotifierPlugin } from "@emdash-cms/plugin-webhook-notifier";
 import { defineConfig, fontProviders } from "astro/config";
 import emdash from "emdash/astro";
-
-import { notifyOnPublishPlugin } from "@emdash-cms/plugin-notify-on-publish";
-import { notifyPostmarkPlugin } from "@emdash-cms/plugin-notify-postmark";
 
 export default defineConfig({
 	output: "server",
@@ -51,18 +50,18 @@ export default defineConfig({
 				formsPlugin(),
 				notifyOnPublishPlugin(),
 				notifyPostmarkPlugin(),
-			//	notifyOnPublishPlugin({
-                        //        recipients: ["ljanaideh@atypon.com"],
-                        //        collections: ["posts"],
-                        //        from: "onboarding@resend.dev",
-                        //        siteUrl: "https://emdash-laith.laithaljanaideh.workers.dev",
-                        //      }),
-	//			notifyOnPublishPlugin({
-        //                          recipients: (process.env.EMAIL_TO || "").split(",").map(s => s.trim()).filter(Boolean),
-        //                          collections: ["posts"],
-        //                          from: process.env.EMAIL_FROM || "onboarding@resend.dev",
-        //                          siteUrl: process.env.SITE_URL || "https://emdash-laith.laithaljanaideh.workers.dev",
-        //                        }),
+				//	notifyOnPublishPlugin({
+				//        recipients: ["ljanaideh@atypon.com"],
+				//        collections: ["posts"],
+				//        from: "onboarding@resend.dev",
+				//        siteUrl: "https://emdash-laith.laithaljanaideh.workers.dev",
+				//      }),
+				//			notifyOnPublishPlugin({
+				//                          recipients: (process.env.EMAIL_TO || "").split(",").map(s => s.trim()).filter(Boolean),
+				//                          collections: ["posts"],
+				//                          from: process.env.EMAIL_FROM || "onboarding@resend.dev",
+				//                          siteUrl: process.env.SITE_URL || "https://emdash-laith.laithaljanaideh.workers.dev",
+				//                        }),
 			],
 			// Sandboxed plugins (run in isolated workers)
 			sandboxed: [],
@@ -73,9 +72,9 @@ export default defineConfig({
 		}),
 	],
 	experimental: {
-	//	cache: {
-	//		provider: cloudflareCache(),
-	//	},
+		//	cache: {
+		//		provider: cloudflareCache(),
+		//	},
 		routeRules: {
 			"/": {
 				maxAge: 3_600,

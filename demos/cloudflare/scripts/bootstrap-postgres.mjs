@@ -6,9 +6,9 @@
  *   DATABASE_URL="postgres://user:pass@host:5432/db" node scripts/bootstrap-postgres.mjs
  */
 
+import { runMigrations } from "emdash/db";
 import { Kysely, PostgresDialect } from "kysely";
 import pg from "pg";
-import { runMigrations } from "emdash/db";
 
 const { Pool } = pg;
 

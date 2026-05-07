@@ -257,9 +257,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
 		// and the full doInit path need this, and the session store is network-backed
 		// (KV / Durable Object) so we want to avoid re-fetching on the hot path.
 		// Skipped entirely for prerendered requests — they have no session.
-		console.log(`[mw] ${request.method} ${url.pathname} — fetching session`);
 		const sessionUser = context.isPrerendered ? null : await context.session?.get("user");
-		console.log(`[mw] ${url.pathname} — session done, isEmDash=${isEmDashRoute}`);
 
 		if (!isEmDashRoute && !isPublicRuntimeRoute && !hasEditCookie && !hasPreviewToken) {
 			if (!sessionUser && !playgroundDb) {
@@ -329,7 +327,6 @@ export const onRequest = defineMiddleware(async (context, next) => {
 					url,
 				});
 				const runAnon = async () => {
-					console.log(`[mw] ${url.pathname} — anon next()`);
 					const t0 = performance.now();
 					const response = await next();
 					timings.push({ name: "render", dur: performance.now() - t0, desc: "Page render" });
@@ -484,10 +481,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
 			});
 
 			const renderAndFinalize = async () => {
-				console.log(`[mw] ${url.pathname} — calling next()`);
 				const t0 = performance.now();
 				const response = await next();
-				console.log(`[mw] ${url.pathname} — next() done in ${Math.round(performance.now() - t0)}ms`);
 				timings.push({ name: "render", dur: performance.now() - t0, desc: "Page render" });
 				timings.push({ name: "mw", dur: performance.now() - mwStart, desc: "Total middleware" });
 				return finalizeResponse(response, timings);

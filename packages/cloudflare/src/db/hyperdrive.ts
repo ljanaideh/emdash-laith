@@ -48,10 +48,7 @@ function getBinding(bindingName: string): HyperdriveBinding {
 
 export function createDialect(config: HyperdriveConfig): PostgresDialect {
 	// Validate the binding exists at dialect creation time.
-	const initial = getBinding(config.binding);
-	console.log(
-		`[hyperdrive] createDialect binding=${config.binding} cs_prefix=${initial.connectionString.slice(0, 30)}...`,
-	);
+	getBinding(config.binding);
 
 	// Fake pool: Kysely only needs connect() + end().
 	// We re-read env.HYPERDRIVE.connectionString on every connect() so we
@@ -60,7 +57,6 @@ export function createDialect(config: HyperdriveConfig): PostgresDialect {
 		connect: async (): Promise<Client & { release: (destroy?: boolean) => Promise<void> }> => {
 			const binding = getBinding(config.binding);
 			const cs = binding.connectionString;
-			console.log(`[hyperdrive] connect() cs_prefix=${cs.slice(0, 30)}...`);
 
 			const connectPromise = (async () => {
 				const client = new Client({
@@ -72,10 +68,11 @@ export function createDialect(config: HyperdriveConfig): PostgresDialect {
 				await client.connect();
 				// Kysely calls release() when it's done with the connection.
 				// We close the Client rather than returning it to a pool.
-				(client as Client & { release: (destroy?: boolean) => Promise<void> }).release =
-					async (_destroy?: boolean) => {
-						await client.end().catch(() => {});
-					};
+				(client as Client & { release: (destroy?: boolean) => Promise<void> }).release = async (
+					_destroy?: boolean,
+				) => {
+					await client.end().catch(() => {});
+				};
 				return client as Client & { release: (destroy?: boolean) => Promise<void> };
 			})();
 
