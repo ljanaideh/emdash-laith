@@ -69,39 +69,13 @@ resource "aws_security_group" "tunnel" {
 }
 
 # ── Security Group: RDS ───────────────────────────────────────────────────────
-# Accepts PostgreSQL from:
-#   - Cloudflare egress IPs (public Hyperdrive fallback / direct admin)
-#   - The tunnel EC2 (private Hyperdrive via cloudflared)
-# IP list: https://www.cloudflare.com/ips/
+# Private Hyperdrive via cloudflared tunnel — only the EC2 needs access to RDS.
+# Cloudflare never connects directly to RDS; traffic flows through the tunnel.
 
 resource "aws_security_group" "rds" {
-  name        = "${var.identifier}-rds"
-  description = "PostgreSQL access for Cloudflare Hyperdrive"
+  name_prefix = "${var.identifier}-rds-"
+  description = "PostgreSQL access from cloudflared tunnel EC2 only"
   vpc_id      = data.aws_vpc.default.id
-
-  ingress {
-    description = "PostgreSQL - Cloudflare egress IPs"
-    from_port   = 5432
-    to_port     = 5432
-    protocol    = "tcp"
-    cidr_blocks = [
-      "173.245.48.0/20",
-      "103.21.244.0/22",
-      "103.22.200.0/22",
-      "103.31.4.0/22",
-      "141.101.64.0/18",
-      "108.162.192.0/18",
-      "190.93.240.0/20",
-      "188.114.96.0/20",
-      "197.234.240.0/22",
-      "198.41.128.0/17",
-      "162.158.0.0/15",
-      "104.16.0.0/13",
-      "104.24.0.0/14",
-      "172.64.0.0/13",
-      "131.0.72.0/22",
-    ]
-  }
 
   ingress {
     description     = "PostgreSQL - cloudflared tunnel EC2"
@@ -116,6 +90,10 @@ resource "aws_security_group" "rds" {
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 
   tags = {
@@ -275,7 +253,7 @@ resource "aws_db_instance" "emdash" {
   publicly_accessible = true
 
   db_subnet_group_name   = aws_db_subnet_group.emdash.name
-  vpc_security_group_ids = [aws_security_group.rds.id, aws_security_group.rds_open.id]
+  vpc_security_group_ids = [aws_security_group.rds.id]
 
   backup_retention_period = 7
   deletion_protection     = false
