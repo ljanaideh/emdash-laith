@@ -21,9 +21,8 @@
 		},
 	],
 
-	// Pin Worker invocations to the Cloudflare PoP in us-east-1 where Hyperdrive/RDS lives
+	// Pin Worker invocations to the Cloudflare PoP closest to RDS in us-east-1
 	"placement": {
-		"mode": "targeted",
 		"region": "aws:us-east-1",
 	},
 
