@@ -21,9 +21,9 @@
 		},
 	],
 
-	// Place Worker in the Cloudflare PoP closest to the RDS instance (TCP probe)
+	// Cloudflare probes Hyperdrive binding and routes Worker to nearest PoP automatically
 	"placement": {
-		"host": "emdash-demo.chsx5yoqeoyq.us-east-1.rds.amazonaws.com:5432",
+		"mode": "smart",
 	},
 
 	"observability": {
