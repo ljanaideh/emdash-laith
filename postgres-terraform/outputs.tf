@@ -24,6 +24,59 @@ output "hyperdrive_origin" {
   value       = aws_db_instance.emdash.address
 }
 
+output "tunnel_instance_id" {
+  description = "EC2 instance ID for the cloudflared tunnel"
+  value       = aws_instance.tunnel.id
+}
+
+output "tunnel_ssm_connect" {
+  description = "Command to open a shell on the tunnel EC2 (no SSH key needed)"
+  value       = "aws ssm start-session --target ${aws_instance.tunnel.id} --region ${var.aws_region}"
+}
+
+output "post_provision_tunnel" {
+  description = "Steps to complete the cloudflared tunnel setup after terraform apply"
+  value       = <<-EOT
+
+    ── Tunnel setup (run after terraform apply) ────────────────────────────
+
+    1. Open a shell on the EC2 (no key pair needed — uses SSM):
+
+         aws ssm start-session --target ${aws_instance.tunnel.id} --region ${var.aws_region}
+
+    2. Authenticate cloudflared (opens a browser link — paste it locally):
+
+         cloudflared tunnel login
+
+    3. Create the tunnel and configure it to proxy to RDS:
+
+         cloudflared tunnel create emdash-pg
+
+         cat > /etc/cloudflared/config.yml << 'EOF'
+         tunnel: <tunnel-id-from-step-above>
+         credentials-file: /root/.cloudflared/<tunnel-id>.json
+         ingress:
+           - service: tcp://${aws_db_instance.emdash.address}:5432
+         EOF
+
+    4. Enable and start the service:
+
+         systemctl enable --now cloudflared
+
+    5. Update Hyperdrive to use the tunnel:
+
+         wrangler hyperdrive update 01b192bf33194ecda6ad2aa1b2f2f8d2 \
+           --origin-host <tunnel-id>.cfargotunnel.com \
+           --origin-port 5432 \
+           --database ${var.db_name} \
+           --origin-user emdash_app
+
+    6. Stop cloudflared on your laptop.
+
+    ────────────────────────────────────────────────────────────────────────
+  EOT
+}
+
 output "post_provision_steps" {
   description = "Reminder of manual steps after terraform apply"
   value       = <<-EOT

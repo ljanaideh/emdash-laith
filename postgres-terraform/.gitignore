@@ -1,0 +1,9 @@
+# State files contain sensitive output values (passwords, endpoints)
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+
+# Local variable overrides — never commit passwords
+terraform.tfvars
+*.auto.tfvars

@@ -40,8 +40,14 @@ variable "master_username" {
   default     = "postgres"
 }
 
-variable "master_password" {
-  description = "Master DB password — set via TF_VAR_master_password or terraform.tfvars"
+variable "tunnel_instance_class" {
+  description = "EC2 instance type for the cloudflared tunnel"
   type        = string
-  sensitive   = true
+  default     = "t3.micro"
+}
+
+variable "db_password_secret_name" {
+  description = "AWS Secrets Manager secret name that holds the RDS master password. Create it once with: aws secretsmanager create-secret --name emdash/rds/master_password --secret-string 'yourpassword'"
+  type        = string
+  default     = "emdash/rds/master_password"
 }
