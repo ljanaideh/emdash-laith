@@ -23,6 +23,7 @@
 
 	// Route Worker to the Cloudflare PoP nearest to RDS in us-east-1
 	"placement": {
+		"mode": "targeted",
 		"region": "aws:us-east-1",
 	},
 
