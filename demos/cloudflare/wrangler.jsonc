@@ -21,6 +21,12 @@
 		},
 	],
 
+	// Pin Worker invocations to the Cloudflare PoP in us-east-1 where Hyperdrive/RDS lives
+	"placement": {
+		"mode": "smart",
+		"region": "aws:us-east-1",
+	},
+
 	"observability": {
 		"enabled": true,
 	},

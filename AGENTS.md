@@ -4,6 +4,10 @@ This file provides guidance to agentic coding tools when working with code in th
 
 **Beta, post pre-release.** EmDash is published to npm and in active use, with i18n, RTL, and the plugin system shipped. We're no longer in the scorched-earth pre-release phase -- real users depend on current behavior, so backwards compatibility now matters (see Rules below). All development happens inside this monorepo using `workspace:*` links. See [CONTRIBUTING.md](CONTRIBUTING.md) for the human-readable contributor guide (setup, repo layout, "build your own site" workflow).
 
+## Fork Rules
+
+This is a **fork** of `emdash-cms/emdash`. The fork is `ljanaideh/emdash-laith`. All PRs must target this fork, never the upstream. Always pass `--repo ljanaideh/emdash-laith` when creating PRs with `gh pr create`. Never open a PR against `emdash-cms/emdash`.
+
 ## Repository Structure
 
 This is a monorepo using pnpm workspaces.
