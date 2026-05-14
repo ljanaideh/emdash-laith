@@ -21,9 +21,9 @@
 		},
 	],
 
-	// Pin Worker invocations to the Cloudflare PoP closest to RDS in us-east-1
+	// Place Worker in the Cloudflare PoP closest to the RDS instance (TCP probe)
 	"placement": {
-		"region": "aws:us-east-1",
+		"host": "emdash-demo.chsx5yoqeoyq.us-east-1.rds.amazonaws.com:5432",
 	},
 
 	"observability": {
